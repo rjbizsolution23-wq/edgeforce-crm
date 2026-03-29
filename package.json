@@ -1,0 +1,24 @@
+{
+  "name": "edgeforce-crm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "deploy:worker": "cd apps/worker && npx wrangler deploy",
+    "deploy:web": "cd apps/web && npx wrangler pages deploy out",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test"
+  },
+  "devDependencies": {
+    "turbo": "^2.8.0",
+    "typescript": "^5.8.0",
+    "@types/node": "^22.15.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

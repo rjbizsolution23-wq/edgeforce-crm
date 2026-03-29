@@ -1,0 +1,91 @@
+name: Deploy EdgeForce CRM
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  deploy-worker:
+    name: Deploy Worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Type check
+        run: pnpm --filter @edgeforce/worker typecheck
+
+      - name: Deploy to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          commands: |
+            cd apps/worker
+            wrangler deploy --name edgeforce-crm-worker
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          SESSIONS_KV_ID: ${{ secrets.SESSIONS_KV_ID }}
+          CACHE_KV_ID: ${{ secrets.CACHE_KV_ID }}
+          RATE_LIMIT_KV_ID: ${{ secrets.RATE_LIMIT_KV_ID }}
+
+  deploy-web:
+    name: Deploy Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm --filter @edgeforce/web build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          commands: |
+            cd apps/web
+            wrangler pages deploy out --project-name=edgeforce-crm
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Lint
+        run: pnpm lint

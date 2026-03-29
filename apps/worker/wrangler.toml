@@ -1,0 +1,37 @@
+name = "edgeforce-crm-worker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[observability]
+enabled = true
+
+[vars]
+ENV = "production"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "edgeforce-crm-db"
+database_id = "${D1_DATABASE_ID}"
+
+# KV bindings
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "${SESSIONS_KV_ID}"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "${CACHE_KV_ID}"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "${RATE_LIMIT_KV_ID}"
+
+# R2 bindings
+[[r2_buckets]]
+binding = "ASSETS"
+name = "edgeforce-assets"
+
+# AI Gateway binding
+[ai]
+binding = "AI"
