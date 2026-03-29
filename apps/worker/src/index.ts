@@ -57,34 +57,41 @@ app.use('/api/*', async (c, next) => {
 // AUTH
 // ============================================================================
 
-const JWT_SECRET = new TextEncoder().encode(c.env.JWT_SECRET || 'edgeforce-secret-key-change-in-production')
+// Default JWT secret - in production use wrangler secret put JWT_SECRET
+const DEFAULT_JWT_SECRET = 'edgeforce-secret-key-change-in-production'
 
 async function verifyToken(c: any): Promise<jose.JWTPayload | null> {
+  const env = c.env as Env
+  const jwtSecret = new TextEncoder().encode(env.JWT_SECRET || DEFAULT_JWT_SECRET)
   const authHeader = c.req.header('Authorization')
   if (!authHeader?.startsWith('Bearer ')) return null
   const token = authHeader.slice(7)
   try {
-    const { payload } = await jose.jwtVerify(token, JWT_SECRET)
+    const { payload } = await jose.jwtVerify(token, jwtSecret)
     return payload
   } catch {
     return null
   }
 }
 
-function createToken(userId: string, tenantId: string, role: string): Promise<string> {
+function getJwtSecret(env: Env): Uint8Array {
+  return new TextEncoder().encode(env.JWT_SECRET || DEFAULT_JWT_SECRET)
+}
+
+function createToken(env: Env, userId: string, tenantId: string, role: string): Promise<string> {
   return new jose.SignJWT({ userId, tenantId, role })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('15m')
-    .sign(JWT_SECRET)
+    .sign(getJwtSecret(env))
 }
 
-function createRefreshToken(): Promise<string> {
+function createRefreshToken(env: Env): Promise<string> {
   return new jose.SignJWT({ type: 'refresh' })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
-    .sign(JWT_SECRET)
+    .sign(getJwtSecret(env))
 }
 
 // ============================================================================
@@ -160,8 +167,8 @@ app.post('/api/auth/register', zValidator('json', z.object({
     { id: '6', name: 'Lost', color: '#ef4444', order: 6 },
   ])).run()
 
-  const token = await createToken(userId, tenantId, 'owner')
-  const refreshToken = await createRefreshToken()
+  const token = await createToken(c.env, userId, tenantId, 'owner')
+  const refreshToken = await createRefreshToken(c.env)
 
   return c.json({
     token,
@@ -191,8 +198,8 @@ app.post('/api/auth/login', zValidator('json', z.object({
     return c.json({ error: 'Invalid credentials' }, 401)
   }
 
-  const token = await createToken(user.id, user.tenant_id, user.role)
-  const refreshToken = await createRefreshToken()
+  const token = await createToken(c.env, user.id, user.tenant_id, user.role)
+  const refreshToken = await createRefreshToken(c.env)
 
   // Update last login
   await c.env.DB.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?')
@@ -217,11 +224,11 @@ app.post('/api/auth/refresh', zValidator('json', z.object({
 })), async (c) => {
   const { refreshToken } = c.req.valid('json')
   try {
-    const { payload } = await jose.jwtVerify(refreshToken, JWT_SECRET)
+    const { payload } = await jose.jwtVerify(refreshToken, getJwtSecret(c.env))
     if (payload.type !== 'refresh') {
       return c.json({ error: 'Invalid token type' }, 401)
     }
-    const token = await createToken(payload.userId as string, payload.tenantId as string, payload.role as string)
+    const token = await createToken(c.env, payload.userId as string, payload.tenantId as string, payload.role as string)
     return c.json({ token })
   } catch {
     return c.json({ error: 'Invalid refresh token' }, 401)

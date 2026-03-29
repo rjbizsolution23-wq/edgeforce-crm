@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Plus, Search, CheckCircle, Circle, Clock, AlertCircle, Calendar, Filter } from 'lucide-react'
+import { Plus, Search, CheckCircle, Circle, Clock, AlertCircle, Calendar, Filter, Phone, Mail } from 'lucide-react'
 import { clsx } from 'clsx'
 
 const demoTasks = [

@@ -12,25 +12,25 @@ ENV = "production"
 [[d1_databases]]
 binding = "DB"
 database_name = "edgeforce-crm-db"
-database_id = "${D1_DATABASE_ID}"
+database_id = "f221d95b-99d5-4147-bf84-da888ee3d94b"
 
-# KV bindings
+# KV bindings - using existing namespaces
 [[kv_namespaces]]
 binding = "SESSIONS"
-id = "${SESSIONS_KV_ID}"
+id = "d6aa41f7a0294edb9594c56d0a74f77b"
 
 [[kv_namespaces]]
 binding = "CACHE"
-id = "${CACHE_KV_ID}"
+id = "9e1cb9202d884c32a9fa653cbd45e63c"
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT"
-id = "${RATE_LIMIT_KV_ID}"
+id = "62fb4d47abb645788db1aa889338a34d"
 
 # R2 bindings
 [[r2_buckets]]
 binding = "ASSETS"
-name = "edgeforce-assets"
+bucket_name = "edgeforce-crm-assets"
 
 # AI Gateway binding
 [ai]

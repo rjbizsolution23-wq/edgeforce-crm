@@ -3,6 +3,18 @@ import { useState } from 'react'
 import { Plus, MoreHorizontal, DollarSign, Calendar, User } from 'lucide-react'
 import { clsx } from 'clsx'
 
+interface Deal {
+  id: string
+  name: string
+  value: number
+  contact: string
+  probability: number
+}
+
+interface DealsByStage {
+  [key: string]: Deal[]
+}
+
 const stages = [
   { id: 'Lead', name: 'Lead', color: '#6366f1' },
   { id: 'Qualified', name: 'Qualified', color: '#8b5cf6' },
@@ -12,7 +24,7 @@ const stages = [
   { id: 'Lost', name: 'Lost', color: '#ef4444' },
 ]
 
-const demoDeals = {
+const demoDeals: DealsByStage = {
   Lead: [
     { id: '1', name: 'TechStart Inc', value: 25000, contact: 'John Smith', probability: 20 },
     { id: '2', name: 'DataFlow Systems', value: 45000, contact: 'Sarah Chen', probability: 15 },
@@ -64,15 +76,15 @@ export default function DealsPage() {
                   <h3 className="font-semibold">{stage.name}</h3>
                 </div>
                 <span className="px-2 py-0.5 rounded-full bg-slate-800 text-xs text-slate-400">
-                  {deals[stage.id as keyof typeof deals]?.length || 0}
+                  {deals[stage.id]?.length || 0}
                 </span>
               </div>
               <p className="text-sm text-slate-400 mt-1">
-                ${(deals[stage.id as keyof typeof deals]?.reduce((sum, d) => sum + d.value, 0) || 0).toLocaleString()}
+                ${deals[stage.id]?.reduce((sum: number, d: Deal) => sum + d.value, 0).toLocaleString() || '0'}
               </p>
             </div>
             <div className="p-3 space-y-3 max-h-[calc(100vh-300px)] overflow-y-auto">
-              {deals[stage.id as keyof typeof deals]?.map((deal) => (
+              {deals[stage.id]?.map((deal: Deal) => (
                 <div
                   key={deal.id}
                   className="p-4 rounded-lg border border-slate-800 bg-slate-900 hover:border-indigo-500/50 cursor-grab transition group"
@@ -108,7 +120,7 @@ export default function DealsPage() {
                   </div>
                 </div>
               ))}
-              {deals[stage.id as keyof typeof deals]?.length === 0 && (
+              {deals[stage.id]?.length === 0 && (
                 <div className="text-center py-8 text-slate-500 text-sm">
                   No deals in this stage
                 </div>
