@@ -1,7 +1,8 @@
 'use client'
 import { useState } from 'react'
-import { User, Building2, Bell, Shield, Palette, Users, CreditCard, Globe, Key, ChevronRight, Mail, Smartphone, Desktop, AlertTriangle, Copy, RefreshCw, Trash2, Plus, Check, X } from 'lucide-react'
+import { User, Building2, Bell, Shield, Palette, Users, CreditCard, Globe, Key, ChevronRight, Mail, Smartphone, Desktop, AlertTriangle, Copy, RefreshCw, Trash2, Plus, Check, X, Zap, CheckCircle2, Loader2 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { createCheckoutSession, createPortalSession } from '@/lib/stripe'
 
 const settingsSections = [
   { id: 'profile', label: 'Profile', icon: User, description: 'Manage your personal information' },
@@ -15,7 +16,8 @@ const settingsSections = [
 ]
 
 export default function SettingsPage() {
-  const [activeSection, setActiveSection] = useState('profile')
+  const [activeSection, setActiveSection] = useState('billing')
+  const [loading, setLoading] = useState<string | null>(null)
 
   return (
     <div className="flex gap-6">
@@ -301,6 +303,7 @@ export default function SettingsPage() {
 
         {activeSection === 'billing' && (
           <div className="space-y-6">
+            {/* Current Plan */}
             <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/50">
               <h3 className="text-lg font-semibold mb-4">Current Plan</h3>
               <div className="flex items-center justify-between p-4 rounded-lg bg-indigo-600/20 border border-indigo-600/30">
@@ -308,12 +311,61 @@ export default function SettingsPage() {
                   <p className="text-xl font-bold">Pro Plan</p>
                   <p className="text-sm text-slate-400">$99/month • 10 team members</p>
                 </div>
-                <button className="px-4 py-2 border border-indigo-500 text-indigo-400 rounded-lg hover:bg-indigo-600/20 transition">
+                <button
+                  onClick={() => {
+                    setLoading('upgrade')
+                    createCheckoutSession('price_pro_monthly').catch(console.error).finally(() => setLoading(null))
+                  }}
+                  disabled={loading === 'upgrade'}
+                  className="px-4 py-2 border border-indigo-500 text-indigo-400 rounded-lg hover:bg-indigo-600/20 transition disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loading === 'upgrade' && <Loader2 className="h-4 w-4 animate-spin" />}
                   Upgrade
                 </button>
               </div>
             </div>
 
+            {/* Subscription Plans */}
+            <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/50">
+              <h3 className="text-lg font-semibold mb-4">Subscription Plans</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                {[
+                  { name: 'Starter', price: 29, priceId: 'price_starter_monthly', features: ['5 team members', '1,000 contacts', 'Email support'], current: false },
+                  { name: 'Pro', price: 99, priceId: 'price_pro_monthly', features: ['10 team members', '10,000 contacts', 'Priority support'], current: true },
+                  { name: 'Enterprise', price: 299, priceId: 'price_enterprise_monthly', features: ['Unlimited users', 'Unlimited contacts', '24/7 support'], current: false },
+                ].map((plan) => (
+                  <div key={plan.name} className={`p-4 rounded-lg border ${plan.current ? 'border-indigo-500 bg-indigo-600/10' : 'border-slate-700'}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="font-bold">{plan.name}</p>
+                      {plan.current && <span className="text-xs bg-indigo-600 px-2 py-1 rounded">Current</span>}
+                    </div>
+                    <p className="text-2xl font-bold mb-3">${plan.price}<span className="text-sm font-normal text-slate-400">/mo</span></p>
+                    <ul className="space-y-1 mb-4">
+                      {plan.features.map((f, i) => (
+                        <li key={i} className="text-sm text-slate-400 flex items-center gap-2">
+                          <CheckCircle2 className="h-3 w-3 text-green-400" />{f}
+                        </li>
+                      ))}
+                    </ul>
+                    {!plan.current && (
+                      <button
+                        onClick={() => {
+                          setLoading(`switch-${plan.name}`)
+                          createCheckoutSession(plan.priceId).catch(console.error).finally(() => setLoading(null))
+                        }}
+                        disabled={loading === `switch-${plan.name}`}
+                        className="w-full py-2 border border-slate-600 rounded-lg hover:bg-slate-800 transition text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {loading === `switch-${plan.name}` && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Switch to {plan.name}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Payment Method */}
             <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/50">
               <h3 className="text-lg font-semibold mb-4">Payment Method</h3>
               <div className="flex items-center justify-between p-4 rounded-lg border border-slate-800">
@@ -324,12 +376,21 @@ export default function SettingsPage() {
                     <p className="text-sm text-slate-400">Expires 12/2027</p>
                   </div>
                 </div>
-                <button className="text-indigo-400 hover:text-indigo-300 text-sm">
+                <button
+                  onClick={() => {
+                    setLoading('portal')
+                    createPortalSession().catch(console.error).finally(() => setLoading(null))
+                  }}
+                  disabled={loading === 'portal'}
+                  className="text-indigo-400 hover:text-indigo-300 text-sm disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loading === 'portal' && <Loader2 className="h-4 w-4 animate-spin" />}
                   Update
                 </button>
               </div>
             </div>
 
+            {/* Billing History */}
             <div className="p-6 rounded-xl border border-slate-800 bg-slate-900/50">
               <h3 className="text-lg font-semibold mb-4">Billing History</h3>
               <div className="space-y-2">

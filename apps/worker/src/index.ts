@@ -2897,6 +2897,119 @@ app.post('/api/webhooks/stripe', async (c) => {
 })
 
 // ============================================================================
+// STRIPE SUBSCRIPTION API
+// ============================================================================
+
+// Create Stripe checkout session for subscription upgrade
+app.post('/api/stripe/checkout', zValidator('json', z.object({
+  priceId: z.string()
+})), async (c) => {
+  const { tenantId } = c.req.param()
+  const { priceId } = c.req.valid('json')
+
+  try {
+    // In production, this would create a real Stripe checkout session
+    // For now, return a mock session ID for development
+    const checkoutSessionId = `cs_${crypto.randomUUID().slice(2)}`
+    const successUrl = `${c.req.header('origin') || 'http://localhost:3000'}/settings?success=true`
+    const cancelUrl = `${c.req.header('origin') || 'http://localhost:3000'}/settings?canceled=true`
+
+    // Store pending checkout in KV
+    await c.env.KV.put(`checkout:${checkoutSessionId}`, JSON.stringify({
+      tenantId,
+      priceId,
+      createdAt: new Date().toISOString()
+    }), { expirationTtl: 3600 })
+
+    return c.json({
+      data: {
+        sessionId: checkoutSessionId,
+        url: `https://checkout.stripe.com/c/pay/${checkoutSessionId}#fidkdWxOYHwnPyd1blpxYHZxWjA0TjE8YGRhZz1NNTJhMmZhZ3志`
+      }
+    })
+  } catch (err) {
+    console.error('Stripe checkout error:', err)
+    return c.json({ error: 'Failed to create checkout session' }, 500)
+  }
+})
+
+// Create Stripe customer portal session
+app.post('/api/stripe/portal', async (c) => {
+  const { tenantId } = c.req.param()
+
+  try {
+    // In production, this would create a real Stripe portal session
+    const portalSessionId = `bps_${crypto.randomUUID().slice(2)}`
+
+    return c.json({
+      data: {
+        url: `https://billing.stripe.com/session/${portalSessionId}`
+      }
+    })
+  } catch (err) {
+    console.error('Stripe portal error:', err)
+    return c.json({ error: 'Failed to create portal session' }, 500)
+  }
+})
+
+// Get subscription status
+app.get('/api/stripe/subscription', async (c) => {
+  const { tenantId } = c.req.param()
+
+  try {
+    // Get tenant's subscription from database
+    const tenant = await c.env.DB.prepare(`
+      SELECT plan, stripe_customer_id, stripe_subscription_id, subscription_status, subscription_expires_at
+      FROM tenants WHERE id = ?
+    `).bind(tenantId).first()
+
+    if (!tenant) {
+      return c.json({ error: 'Tenant not found' }, 404)
+    }
+
+    return c.json({
+      data: {
+        plan: tenant.plan || 'free',
+        status: tenant.subscription_status || 'inactive',
+        expiresAt: tenant.subscription_expires_at,
+        customerId: tenant.stripe_customer_id
+      }
+    })
+  } catch (err) {
+    console.error('Get subscription error:', err)
+    return c.json({ error: 'Failed to get subscription' }, 500)
+  }
+})
+
+// Update subscription (webhook handler for Stripe events)
+app.post('/api/stripe/subscription/update', zValidator('json', z.object({
+  subscriptionId: z.string(),
+  status: z.string(),
+  plan: z.string(),
+  expiresAt: z.string().optional()
+})), async (c) => {
+  const { tenantId } = c.req.param()
+  const { subscriptionId, status, plan, expiresAt } = c.req.valid('json')
+
+  try {
+    await c.env.DB.prepare(`
+      UPDATE tenants SET
+        stripe_subscription_id = ?,
+        subscription_status = ?,
+        plan = ?,
+        subscription_expires_at = ?,
+        updated_at = ?
+      WHERE id = ?
+    `).bind(subscriptionId, status, plan, expiresAt || null, new Date().toISOString(), tenantId).run()
+
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Update subscription error:', err)
+    return c.json({ error: 'Failed to update subscription' }, 500)
+  }
+})
+
+// ============================================================================
 // ERROR HANDLING
 // ============================================================================
 
