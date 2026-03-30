@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Zap, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { api } from '@/lib/api'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -20,16 +21,22 @@ export default function RegisterPage() {
     e.preventDefault()
     setLoading(true)
 
-    // Demo registration - in production call API
-    if (form.email && form.password && form.firstName) {
-      localStorage.setItem('token', 'demo-token')
-      localStorage.setItem('user', JSON.stringify({ email: form.email }))
-      toast.success('Account created! Welcome to EdgeForce.')
-      router.push('/dashboard')
-    } else {
-      toast.error('Please fill in all required fields')
+    const result = await api.register({
+      email: form.email,
+      password: form.password,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      companyName: form.companyName,
+    })
+
+    if (result.error) {
+      toast.error(result.error)
+      setLoading(false)
+      return
     }
 
+    toast.success('Account created! Welcome to EdgeForce.')
+    router.push('/dashboard')
     setLoading(false)
   }
 

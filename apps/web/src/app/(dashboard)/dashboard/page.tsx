@@ -1,12 +1,11 @@
 'use client'
 import { useQuery } from '@tanstack/react-query'
+import { api } from '@/lib/api'
 import {
-  Users, DollarSign, CheckSquare, TrendingUp, TrendingDown,
-  ArrowUpRight, ArrowDownRight, Plus, Filter, RefreshCw
+  Users, DollarSign, CheckSquare, TrendingUp,
+  ArrowUpRight, ArrowDownRight, Plus, Filter
 } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://lil-api-worker.rickjefferson.workers.dev'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface StatsCard {
   title: string
@@ -61,32 +60,32 @@ const revenueData = [
 ]
 
 const activityData = [
-  { day: 'Mon', emails: 45, calls: 12 },
-  { day: 'Tue', emails: 52, calls: 18 },
-  { day: 'Wed', emails: 38, calls: 15 },
-  { day: 'Thu', emails: 61, calls: 22 },
-  { day: 'Fri', emails: 55, calls: 19 },
+  { type: 'deal_won', text: 'Acme Corp deal closed for $45,000', time: '2 hours ago', user: 'S' },
+  { type: 'email_opened', text: 'Lead opened email sequence "Follow Up"', time: '4 hours ago', user: 'M' },
+  { type: 'task_completed', text: 'Called Johnson about proposal', time: '6 hours ago', user: 'R' },
+  { type: 'contact_created', text: 'New contact added: Emily Chen', time: 'Yesterday', user: 'S' },
+  { type: 'meeting_scheduled', text: 'Demo scheduled with TechStart Inc', time: 'Yesterday', user: 'M' },
 ]
 
 export default function DashboardPage() {
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['dashboard-stats'],
+  const { data: dashboardData } = useQuery({
+    queryKey: ['dashboard'],
     queryFn: async () => {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`${API_URL}/api/analytics/dashboard`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      return res.json()
+      const result = await api.getDashboard()
+      return result.data || null
     },
     staleTime: 60000,
+    retry: false,
   })
 
-  // Demo data for now
-  const demoStats = {
-    contacts: { total: 1247, newThisMonth: 89 },
-    deals: { total: 156, open: 89, pipelineValue: 2450000, wonThisMonth: 12, revenueThisMonth: 156000 },
-    tasks: { pending: 34, overdue: 7 },
+  // Use real data or fallback to demo
+  const stats = dashboardData || {
+    contacts: { total: 0, newThisMonth: 0 },
+    deals: { total: 0, open: 0, pipelineValue: 0, wonThisMonth: 0, revenueThisMonth: 0 },
+    tasks: { pending: 0, overdue: 0 },
   }
+
+  const user = api.getUser()
 
   return (
     <div className="space-y-6">
@@ -94,7 +93,9 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-slate-400">Welcome back, Rick. Here's what's happening today.</p>
+          <p className="text-slate-400">
+            Welcome back, {user?.firstName || 'Rick'}. Here's what's happening today.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button className="flex items-center gap-2 px-4 py-2 border border-slate-700 rounded-lg hover:bg-slate-800 transition">
@@ -112,25 +113,25 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Contacts"
-          value={demoStats.contacts.total.toLocaleString()}
+          value={stats.contacts.total.toLocaleString()}
           change={12.5}
           icon={Users}
         />
         <StatCard
           title="Open Deals"
-          value={demoStats.deals.open}
+          value={stats.deals.open}
           change={8.2}
           icon={DollarSign}
         />
         <StatCard
           title="Pipeline Value"
-          value={`$${(demoStats.deals.pipelineValue / 1000000).toFixed(2)}M`}
+          value={stats.deals.pipelineValue > 0 ? `$${(stats.deals.pipelineValue / 1000000).toFixed(2)}M` : '$0'}
           change={15.3}
           icon={TrendingUp}
         />
         <StatCard
           title="Pending Tasks"
-          value={demoStats.tasks.pending}
+          value={stats.tasks.pending}
           change={-3.1}
           icon={CheckSquare}
         />
@@ -185,16 +186,10 @@ export default function DashboardPage() {
             <button className="text-sm text-indigo-400 hover:text-indigo-300">View all</button>
           </div>
           <div className="space-y-4">
-            {[
-              { type: 'deal_won', text: 'Acme Corp deal closed for $45,000', time: '2 hours ago', user: 'Sarah' },
-              { type: 'email_opened', text: 'Lead opened email sequence "Follow Up"', time: '4 hours ago', user: 'Mike' },
-              { type: 'task_completed', text: 'Called Johnson about proposal', time: '6 hours ago', user: 'Rick' },
-              { type: 'contact_created', text: 'New contact added: Emily Chen', time: 'Yesterday', user: 'Sarah' },
-              { type: 'meeting_scheduled', text: 'Demo scheduled with TechStart Inc', time: 'Yesterday', user: 'Mike' },
-            ].map((activity, i) => (
+            {activityData.map((activity, i) => (
               <div key={i} className="flex items-start gap-4 p-3 rounded-lg hover:bg-slate-800/50 transition">
                 <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-sm font-medium">
-                  {activity.user[0]}
+                  {activity.user}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm">{activity.text}</p>
@@ -210,7 +205,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Today's Tasks</h3>
             <span className="px-2 py-1 rounded-full bg-indigo-600/20 text-indigo-400 text-xs font-medium">
-              {demoStats.tasks.pending} pending
+              {stats.tasks.pending} pending
             </span>
           </div>
           <div className="space-y-3">

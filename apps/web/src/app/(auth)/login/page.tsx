@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Zap, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { api } from '@/lib/api'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -14,16 +15,16 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
 
-    // Demo login - in production call API
-    if (form.email && form.password) {
-      localStorage.setItem('token', 'demo-token')
-      localStorage.setItem('user', JSON.stringify({ email: form.email }))
-      toast.success('Welcome back!')
-      router.push('/dashboard')
-    } else {
-      toast.error('Please enter credentials')
+    const result = await api.login(form.email, form.password)
+
+    if (result.error) {
+      toast.error(result.error)
+      setLoading(false)
+      return
     }
 
+    toast.success('Welcome back!')
+    router.push('/dashboard')
     setLoading(false)
   }
 

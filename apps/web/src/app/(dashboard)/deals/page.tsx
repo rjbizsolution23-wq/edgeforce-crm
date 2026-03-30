@@ -1,7 +1,10 @@
 'use client'
 import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, MoreHorizontal, DollarSign, Calendar, User } from 'lucide-react'
 import { clsx } from 'clsx'
+import { api } from '@/lib/api'
+import CreateDealModal from '@/components/modals/CreateDealModal'
 
 interface Deal {
   id: string
@@ -16,7 +19,7 @@ interface DealsByStage {
 }
 
 const stages = [
-  { id: 'Lead', name: 'Lead', color: '#6366f1' },
+  { id: 'New', name: 'New', color: '#6366f1' },
   { id: 'Qualified', name: 'Qualified', color: '#8b5cf6' },
   { id: 'Proposal', name: 'Proposal', color: '#a855f7' },
   { id: 'Negotiation', name: 'Negotiation', color: '#d946ef' },
@@ -25,7 +28,7 @@ const stages = [
 ]
 
 const demoDeals: DealsByStage = {
-  Lead: [
+  New: [
     { id: '1', name: 'TechStart Inc', value: 25000, contact: 'John Smith', probability: 20 },
     { id: '2', name: 'DataFlow Systems', value: 45000, contact: 'Sarah Chen', probability: 15 },
   ],
@@ -46,7 +49,35 @@ const demoDeals: DealsByStage = {
 }
 
 export default function DealsPage() {
-  const [deals, setDeals] = useState(demoDeals)
+  const [showModal, setShowModal] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data: dealsData } = useQuery({
+    queryKey: ['deals'],
+    queryFn: async () => {
+      const result = await api.getDeals()
+      return result.data || []
+    }
+  })
+
+  // Convert API deals to stage-based structure
+  const apiDeals: DealsByStage = { ...demoDeals }
+  if (dealsData?.length) {
+    stages.forEach(s => apiDeals[s.id] = [])
+    dealsData.forEach((d: any) => {
+      const stage = d.stage || 'New'
+      if (!apiDeals[stage]) apiDeals[stage] = []
+      apiDeals[stage].push({
+        id: d.id,
+        name: d.name,
+        value: d.value || 0,
+        contact: d.contact_name || d.contact_id || 'Unknown',
+        probability: d.probability || 0
+      })
+    })
+  }
+
+  const deals = dealsData?.length ? apiDeals : demoDeals
 
   return (
     <div className="space-y-6">
@@ -56,7 +87,7 @@ export default function DealsPage() {
           <h1 className="text-2xl font-bold">Deals</h1>
           <p className="text-slate-400">Drag and drop to move deals through stages</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition">
+        <button onClick={() => setShowModal(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition">
           <Plus className="h-4 w-4" />
           New Deal
         </button>
@@ -104,10 +135,6 @@ export default function DealsPage() {
                       <User className="h-3 w-3" />
                       {deal.contact}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <Calendar className="h-3 w-3" />
-                      Close by Mar 30
-                    </div>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="h-1.5 flex-1 rounded-full bg-slate-800 overflow-hidden">
@@ -129,6 +156,12 @@ export default function DealsPage() {
           </div>
         ))}
       </div>
+
+      <CreateDealModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['deals'] })}
+      />
     </div>
   )
 }
