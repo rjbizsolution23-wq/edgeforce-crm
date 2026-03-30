@@ -4,7 +4,10 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   LayoutDashboard, Users, DollarSign, CheckSquare, BarChart3,
-  Settings, Bell, Search, ChevronDown, Menu, X, Plus, LogOut, Zap
+  Settings, Bell, Search, ChevronDown, Menu, X, Plus, LogOut, Zap,
+  Mail, FileText, GitBranch, Globe, Phone, Calendar, FileSignature,
+  MessageSquare, Video, UserPlus, FileCheck, UsersRound, Target, CreditCard,
+  Building2, Star, Smartphone, Headphones, Bot, Plug, Search as SearchIcon
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -13,6 +16,27 @@ const navItems = [
   { href: '/contacts', icon: Users, label: 'Contacts' },
   { href: '/deals', icon: DollarSign, label: 'Deals' },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
+  { href: '/pipeline', icon: Target, label: 'Pipeline' },
+  { href: '/email-templates', icon: Mail, label: 'Email Templates' },
+  { href: '/email-sequences', icon: FileText, label: 'Sequences' },
+  { href: '/sms', icon: MessageSquare, label: 'SMS' },
+  { href: '/workflows-new', icon: GitBranch, label: 'Automation' },
+  { href: '/forms', icon: FileCheck, label: 'Forms' },
+  { href: '/landing-pages', icon: Globe, label: 'Landing Pages' },
+  { href: '/seo', icon: SearchIcon, label: 'SEO' },
+  { href: '/calendar', icon: Calendar, label: 'Calendar' },
+  { href: '/calls', icon: Phone, label: 'Calls' },
+  { href: '/meetings', icon: Video, label: 'Meetings' },
+  { href: '/proposals', icon: FileSignature, label: 'Proposals' },
+  { href: '/ai-assistant', icon: Target, label: 'AI Assistant' },
+  { href: '/helpdesk', icon: Headphones, label: 'Helpdesk' },
+  { href: '/live-chat', icon: MessageSquare, label: 'Live Chat' },
+  { href: '/chatbot-builder', icon: Bot, label: 'Chatbots' },
+  { href: '/team', icon: UsersRound, label: 'Team' },
+  { href: '/agency', icon: Building2, label: 'Agency' },
+  { href: '/reviews', icon: Star, label: 'Reviews' },
+  { href: '/integrations', icon: Plug, label: 'Integrations' },
+  { href: '/mobile', icon: Smartphone, label: 'Mobile' },
   { href: '/analytics', icon: BarChart3, label: 'Analytics' },
   { href: '/settings', icon: Settings, label: 'Settings' },
 ]
