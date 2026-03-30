@@ -770,6 +770,78 @@ class ApiClient {
     return this.request<any>(`/api/public/tickets/${ticketNumber}?email=${encodeURIComponent(email)}`)
   }
 
+  // Quotes
+  async getQuotes(params?: { status?: string; search?: string }) {
+    return this.request<{ data: any[] }>('/api/quotes', { params })
+  }
+
+  async getQuote(id: string) {
+    return this.request<any>(`/api/quotes/${id}`)
+  }
+
+  async createQuote(data: {
+    title: string
+    clientId: string
+    items: { description: string; quantity: number; unitPrice: number }[]
+    validUntil: string
+    notes?: string
+  }) {
+    return this.request<any>('/api/quotes', { method: 'POST', body: data })
+  }
+
+  async updateQuote(id: string, data: any) {
+    return this.request<any>(`/api/quotes/${id}`, { method: 'PUT', body: data })
+  }
+
+  async deleteQuote(id: string) {
+    return this.request<any>(`/api/quotes/${id}`, { method: 'DELETE' })
+  }
+
+  async sendQuote(id: string) {
+    return this.request<any>(`/api/quotes/${id}/send`, { method: 'POST' })
+  }
+
+  async duplicateQuote(id: string) {
+    return this.request<any>(`/api/quotes/${id}/duplicate`, { method: 'POST' })
+  }
+
+  // Invoices
+  async getInvoices(params?: { status?: string; search?: string }) {
+    return this.request<{ data: any[] }>('/api/invoices', { params })
+  }
+
+  async getInvoice(id: string) {
+    return this.request<any>(`/api/invoices/${id}`)
+  }
+
+  async createInvoice(data: {
+    title: string
+    quoteId?: string
+    clientId: string
+    items: { description: string; quantity: number; unitPrice: number }[]
+    issueDate: string
+    dueDate: string
+    notes?: string
+  }) {
+    return this.request<any>('/api/invoices', { method: 'POST', body: data })
+  }
+
+  async updateInvoice(id: string, data: any) {
+    return this.request<any>(`/api/invoices/${id}`, { method: 'PUT', body: data })
+  }
+
+  async deleteInvoice(id: string) {
+    return this.request<any>(`/api/invoices/${id}`, { method: 'DELETE' })
+  }
+
+  async sendInvoice(id: string) {
+    return this.request<any>(`/api/invoices/${id}/send`, { method: 'POST' })
+  }
+
+  async markInvoicePaid(id: string) {
+    return this.request<any>(`/api/invoices/${id}/paid`, { method: 'POST' })
+  }
+
   // Check auth status
   isAuthenticated(): boolean {
     return !!this.getToken()
