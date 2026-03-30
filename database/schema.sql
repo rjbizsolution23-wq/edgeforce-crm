@@ -1206,6 +1206,48 @@ CREATE TABLE IF NOT EXISTS payments (
   FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 );
 
+-- ============================================================================
+-- NOTIFICATIONS & REAL-TIME
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('deal', 'contact', 'task', 'invoice', 'quote', 'mention', 'system', 'chat')),
+  title TEXT NOT NULL,
+  message TEXT,
+  data TEXT DEFAULT '{}', -- JSON with extra data
+  read_at TEXT,
+  read_by TEXT,
+  action_url TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  keys_p256dh TEXT NOT NULL,
+  keys_auth TEXT NOT NULL,
+  expires_at TEXT,
+  last_used_at TEXT DEFAULT (datetime('now')),
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_notifications_user ON notifications(user_id, created_at DESC);
+CREATE INDEX idx_notifications_unread ON notifications(user_id, read_at) WHERE read_at IS NULL;
+CREATE INDEX idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+CREATE TRIGGER update_notifications_timestamp AFTER UPDATE ON notifications
+BEGIN
+  UPDATE notifications SET created_at = datetime('now') WHERE id = NEW.id;
+END;
+
 CREATE TRIGGER update_helpdesk_tickets_timestamp AFTER UPDATE ON helpdesk_tickets
 BEGIN
   UPDATE helpdesk_tickets SET updated_at = datetime('now') WHERE id = NEW.id;

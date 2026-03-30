@@ -3010,6 +3010,178 @@ app.post('/api/stripe/subscription/update', zValidator('json', z.object({
 })
 
 // ============================================================================
+// NOTIFICATIONS & REAL-TIME API
+// ============================================================================
+
+// Get notifications for user
+app.get('/api/notifications', async (c) => {
+  const { tenantId, userId } = c.req.param()
+
+  try {
+    const limit = parseInt(c.req.query('limit') || '20')
+    const offset = parseInt(c.req.query('offset') || '0')
+    const unreadOnly = c.req.query('unread') === 'true'
+
+    let query = 'SELECT * FROM notifications WHERE user_id = ? AND tenant_id = ?'
+    if (unreadOnly) {
+      query += ' AND read_at IS NULL'
+    }
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+
+    const notifications = await c.env.DB.prepare(query)
+      .bind(userId, tenantId, limit, offset)
+      .all()
+
+    const unreadCount = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND tenant_id = ? AND read_at IS NULL'
+    ).bind(userId, tenantId).first()
+
+    return c.json({
+      data: notifications.results,
+      unreadCount: unreadCount?.count || 0
+    })
+  } catch (err) {
+    console.error('Get notifications error:', err)
+    return c.json({ error: 'Failed to get notifications' }, 500)
+  }
+})
+
+// Create notification
+app.post('/api/notifications', zValidator('json', z.object({
+  userId: z.string(),
+  type: z.string(),
+  title: z.string(),
+  message: z.string().optional(),
+  data: z.record(z.any()).optional(),
+  actionUrl: z.string().optional()
+})), async (c) => {
+  const { tenantId } = c.req.param()
+  const { userId, type, title, message, data, actionUrl } = c.req.valid('json')
+
+  try {
+    const notificationId = crypto.randomUUID()
+
+    await c.env.DB.prepare(`
+      INSERT INTO notifications (id, tenant_id, user_id, type, title, message, data, action_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(notificationId, tenantId, userId, type, title, message || null, JSON.stringify(data || {}), actionUrl || null).run()
+
+    return c.json({ data: { id: notificationId } }, 201)
+  } catch (err) {
+    console.error('Create notification error:', err)
+    return c.json({ error: 'Failed to create notification' }, 500)
+  }
+})
+
+// Mark notification as read
+app.put('/api/notifications/:id/read', async (c) => {
+  const { id } = c.req.param()
+  const { userId } = c.req.param()
+
+  try {
+    await c.env.DB.prepare(`
+      UPDATE notifications SET read_at = ?, read_by = ? WHERE id = ? AND user_id = ?
+    `).bind(new Date().toISOString(), userId, id, userId).run()
+
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Mark read error:', err)
+    return c.json({ error: 'Failed to mark as read' }, 500)
+  }
+})
+
+// Mark all notifications as read
+app.post('/api/notifications/read-all', async (c) => {
+  const { tenantId, userId } = c.req.param()
+
+  try {
+    await c.env.DB.prepare(`
+      UPDATE notifications SET read_at = ?, read_by = ? WHERE user_id = ? AND tenant_id = ? AND read_at IS NULL
+    `).bind(new Date().toISOString(), userId, userId, tenantId).run()
+
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Mark all read error:', err)
+    return c.json({ error: 'Failed to mark all as read' }, 500)
+  }
+})
+
+// Delete notification
+app.delete('/api/notifications/:id', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    await c.env.DB.prepare('DELETE FROM notifications WHERE id = ?').bind(id).run()
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Delete notification error:', err)
+    return c.json({ error: 'Failed to delete notification' }, 500)
+  }
+})
+
+// ============================================================================
+// PUSH SUBSCRIPTIONS API
+// ============================================================================
+
+// Register push subscription
+app.post('/api/push/subscribe', zValidator('json', z.object({
+  endpoint: z.string(),
+  keys_p256dh: z.string(),
+  keys_auth: z.string(),
+  expiresAt: z.string().optional()
+})), async (c) => {
+  const { tenantId, userId } = c.req.param()
+  const { endpoint, keys_p256dh, keys_auth, expiresAt } = c.req.valid('json')
+
+  try {
+    // Delete existing subscription for this endpoint
+    await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run()
+
+    const subscriptionId = crypto.randomUUID()
+    await c.env.DB.prepare(`
+      INSERT INTO push_subscriptions (id, user_id, tenant_id, endpoint, keys_p256dh, keys_auth, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(subscriptionId, userId, tenantId, endpoint, keys_p256dh, keys_auth, expiresAt || null).run()
+
+    return c.json({ data: { id: subscriptionId } }, 201)
+  } catch (err) {
+    console.error('Subscribe error:', err)
+    return c.json({ error: 'Failed to subscribe' }, 500)
+  }
+})
+
+// Get push subscriptions for user
+app.get('/api/push/subscriptions', async (c) => {
+  const { userId } = c.req.param()
+
+  try {
+    const subscriptions = await c.env.DB.prepare(
+      'SELECT id, endpoint, expires_at, last_used_at, created_at FROM push_subscriptions WHERE user_id = ?'
+    ).bind(userId).all()
+
+    return c.json({ data: subscriptions.results })
+  } catch (err) {
+    console.error('Get subscriptions error:', err)
+    return c.json({ error: 'Failed to get subscriptions' }, 500)
+  }
+})
+
+// Delete push subscription
+app.delete('/api/push/unsubscribe', zValidator('json', z.object({
+  endpoint: z.string()
+})), async (c) => {
+  const { endpoint } = c.req.valid('json')
+
+  try {
+    await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run()
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Unsubscribe error:', err)
+    return c.json({ error: 'Failed to unsubscribe' }, 500)
+  }
+})
+
+// ============================================================================
 // ERROR HANDLING
 // ============================================================================
 
