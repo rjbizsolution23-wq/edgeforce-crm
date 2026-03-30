@@ -7,7 +7,8 @@ import {
   Settings, Bell, Search, ChevronDown, Menu, X, Plus, LogOut, Zap,
   Mail, FileText, GitBranch, Globe, Phone, Calendar, FileSignature,
   MessageSquare, Video, UserPlus, FileCheck, UsersRound, Target, CreditCard,
-  Building2, Star, Smartphone, Headphones, Bot, Plug, Search as SearchIcon
+  Building2, Star, Smartphone, Headphones, Bot, Plug, Search as SearchIcon,
+  Receipt
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -28,6 +29,8 @@ const navItems = [
   { href: '/calls', icon: Phone, label: 'Calls' },
   { href: '/meetings', icon: Video, label: 'Meetings' },
   { href: '/proposals', icon: FileSignature, label: 'Proposals' },
+  { href: '/quotes', icon: FileText, label: 'Quotes' },
+  { href: '/invoices', icon: Receipt, label: 'Invoices' },
   { href: '/ai-assistant', icon: Target, label: 'AI Assistant' },
   { href: '/helpdesk', icon: Headphones, label: 'Helpdesk' },
   { href: '/live-chat', icon: MessageSquare, label: 'Live Chat' },
