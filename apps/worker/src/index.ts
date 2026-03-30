@@ -1031,6 +1031,1363 @@ app.post('/api/webhooks/test', zValidator('json', z.object({
 })
 
 // ============================================================================
+// EMAIL TEMPLATES
+// ============================================================================
+
+app.get('/api/email-templates', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM email_templates WHERE tenant_id = ? ORDER BY created_at DESC'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results })
+})
+
+app.post('/api/email-templates', zValidator('json', z.object({
+  name: z.string().min(1),
+  subject: z.string().min(1),
+  body: z.string().min(1),
+  category: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { name, subject, body, category } = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO email_templates (id, tenant_id, name, subject, body, category)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenantId, name, subject, body, category || 'general').run()
+
+  const template = await c.env.DB.prepare('SELECT * FROM email_templates WHERE id = ?').bind(id).first()
+  return c.json({ data: template }, 201)
+})
+
+app.patch('/api/email-templates/:id', zValidator('json', z.object({
+  name: z.string().optional(),
+  subject: z.string().optional(),
+  body: z.string().optional(),
+  category: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const data = c.req.valid('json')
+  const id = c.req.param('id')
+
+  const updates: string[] = []
+  const bindings: any[] = []
+
+  Object.entries(data).forEach(([key, value]) => {
+    updates.push(`${key} = ?`)
+    bindings.push(value)
+  })
+
+  if (updates.length > 0) {
+    bindings.push(id, user.tenantId)
+    await c.env.DB.prepare(`
+      UPDATE email_templates SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?
+    `).bind(...bindings).run()
+  }
+
+  const template = await c.env.DB.prepare('SELECT * FROM email_templates WHERE id = ?').bind(id).first()
+  return c.json({ data: template })
+})
+
+app.delete('/api/email-templates/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  await c.env.DB.prepare(
+    'DELETE FROM email_templates WHERE id = ? AND tenant_id = ?'
+  ).bind(c.req.param('id'), user.tenantId).run()
+
+  return c.json({ deleted: true })
+})
+
+// ============================================================================
+// EMAIL SEQUENCES
+// ============================================================================
+
+app.get('/api/email-sequences', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM email_sequences WHERE tenant_id = ? ORDER BY created_at DESC'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results })
+})
+
+app.post('/api/email-sequences', zValidator('json', z.object({
+  name: z.string().min(1),
+  subject: z.string().min(1),
+  body: z.string().min(1),
+  delayDays: z.number().min(0).default(1),
+  trigger: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { name, subject, body, delayDays, trigger } = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO email_sequences (id, tenant_id, name, subject, body, delay_days, trigger)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenantId, name, subject, body, delayDays, trigger || 'manual').run()
+
+  const sequence = await c.env.DB.prepare('SELECT * FROM email_sequences WHERE id = ?').bind(id).first()
+  return c.json({ data: sequence }, 201)
+})
+
+// ============================================================================
+// SMS (Twilio Integration)
+ // ============================================================================
+
+ app.get('/api/sms/templates', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM sms_templates WHERE tenant_id = ? ORDER BY created_at DESC'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/sms/templates', zValidator('json', z.object({
+  name: z.string().min(1),
+  content: z.string().min(1),
+  variables: z.array(z.string()).optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { name, content, variables } = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO sms_templates (id, tenant_id, name, content, variables)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(id, user.tenantId, name, content, JSON.stringify(variables || [])).run()
+
+  const template = await c.env.DB.prepare('SELECT * FROM sms_templates WHERE id = ?').bind(id).first()
+  return c.json({ data: template }, 201)
+})
+
+app.get('/api/sms/campaigns', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM sms_campaigns WHERE tenant_id = ? ORDER BY created_at DESC'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/sms/campaigns', zValidator('json', z.object({
+  name: z.string().min(1),
+  templateId: z.string(),
+  audienceFilter: z.record(z.any()).optional(),
+  scheduledAt: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { name, templateId, audienceFilter, scheduledAt } = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO sms_campaigns (id, tenant_id, name, template_id, audience_filter, status, scheduled_at)
+    VALUES (?, ?, ?, ?, ?, 'draft', ?)
+  `).bind(id, user.tenantId, name, templateId, JSON.stringify(audienceFilter || {}), scheduledAt || null).run()
+
+  const campaign = await c.env.DB.prepare('SELECT * FROM sms_campaigns WHERE id = ?').bind(id).first()
+  return c.json({ data: campaign }, 201)
+})
+
+app.get('/api/sms/logs', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const limit = parseInt(c.req.query('limit') || '100')
+
+  const { results } = await c.env.DB.prepare(`
+    SELECT sl.*, c.first_name, c.last_name, c.phone as contact_phone
+    FROM sms_logs sl
+    LEFT JOIN contacts c ON sl.contact_id = c.id
+    WHERE sl.tenant_id = ?
+    ORDER BY sl.sent_at DESC
+    LIMIT ?
+  `).bind(user.tenantId, limit).all()
+
+  return c.json({ data: results || [] })
+})
+
+// ============================================================================
+// AI ASSISTANT (Workers AI)
+ // ============================================================================
+
+ app.post('/api/ai/chat', zValidator('json', z.object({
+  message: z.string().min(1),
+  context: z.record(z.any()).optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { message, context } = c.req.valid('json')
+
+  // Build context prompt for CRM data
+  const tenantId = user.tenantId
+
+  // Get relevant CRM data
+  const { results: contacts } = await c.env.DB.prepare(
+    'SELECT COUNT(*) as count FROM contacts WHERE tenant_id = ?'
+  ).bind(tenantId).first() as any
+
+  const { results: deals } = await c.env.DB.prepare(
+    'SELECT SUM(value) as total, COUNT(*) as count FROM deals WHERE tenant_id = ?'
+  ).bind(tenantId).first() as any
+
+  const systemPrompt = `You are EdgeForce AI, an AI assistant for a CRM system. You help users with:
+- Analyzing pipeline and deal data
+- Writing emails and follow-ups
+- Lead scoring and prioritization
+- Meeting summaries
+- General CRM guidance
+
+Current user context:
+- Tenant ID: ${tenantId}
+- Total contacts: ${contacts?.count || 0}
+- Total deals: ${deals?.count || 0}
+- Pipeline value: $${deals?.total || 0}
+
+Be helpful, concise, and focused on actionable insights.`
+
+  try {
+    const aiResponse = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: message },
+      ],
+      max_tokens: 1000,
+    })
+
+    const reply = aiResponse.messages?.[0]?.content || 'I\'m having trouble processing your request. Please try again.'
+
+    return c.json({
+      data: {
+        reply,
+        timestamp: new Date().toISOString(),
+        model: 'llama-3-8b-instruct',
+      },
+    })
+  } catch (error) {
+    // Fallback response
+    return c.json({
+      data: {
+        reply: 'I\'m here to help with your CRM! I can assist with pipeline analysis, email drafting, lead scoring, and more. What would you like to do?',
+        timestamp: new Date().toISOString(),
+        model: 'fallback',
+      },
+    })
+  }
+})
+
+app.post('/api/ai/email-writer', zValidator('json', z.object({
+  type: z.enum(['follow-up', 'cold-outreach', 'welcome', 'closing']),
+  contactName: z.string(),
+  context: z.record(z.any()).optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { type, contactName, context } = c.req.valid('json')
+
+  const prompts: Record<string, string> = {
+    'follow-up': `Write a follow-up email to ${contactName}. Keep it professional, short, and compelling. Include a clear call-to-action.`,
+    'cold-outreach': `Write a cold outreach email to ${contactName}. Make it personalized, value-focused, and not pushy.`,
+    'welcome': `Write a welcome email for ${contactName} who just signed up. Make it warm and informative.`,
+    'closing': `Write a closing email for ${contactName}. Be confident but not aggressive. Include next steps.`,
+  }
+
+  try {
+    const aiResponse = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+      messages: [
+        { role: 'system', content: 'You are an expert email copywriter for a CRM platform. Write concise, professional emails that convert.' },
+        { role: 'user', content: prompts[type] || prompts['follow-up'] },
+      ],
+      max_tokens: 500,
+    })
+
+    const email = aiResponse.messages?.[0]?.content || ''
+
+    return c.json({
+      data: {
+        subject: `Following up - ${contactName}`,
+        body: email,
+        type,
+      },
+    })
+  } catch (error) {
+    return c.json({ data: { subject: '', body: 'AI generation failed. Please try again.', type } })
+  }
+})
+
+// ============================================================================
+// CALENDAR & BOOKING
+ // ============================================================================
+
+ app.get('/api/calendar/availability', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM calendar_availability WHERE tenant_id = ?'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/calendar/availability', zValidator('json', z.object({
+  dayOfWeek: z.number().min(0).max(6),
+  startTime: z.string(),
+  endTime: z.string(),
+  isAvailable: z.boolean().default(true),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const data = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO calendar_availability (id, tenant_id, day_of_week, start_time, end_time, is_available)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenantId, data.dayOfWeek, data.startTime, data.endTime, data.isAvailable ? 1 : 0).run()
+
+  return c.json({ data: { id } }, 201)
+})
+
+app.post('/api/calendar/bookings', zValidator('json', z.object({
+  contactId: z.string().optional(),
+  contactName: z.string(),
+  contactEmail: z.string().email(),
+  contactPhone: z.string().optional(),
+  startTime: z.string(),
+  endTime: z.string(),
+  meetingType: z.enum(['video', 'phone', 'in-person']),
+  notes: z.string().optional(),
+})), async (c) => {
+  const data = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO calendar_bookings (id, tenant_id, contact_id, contact_name, contact_email, contact_phone, start_time, end_time, meeting_type, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    id, data.contactId || null, data.contactName, data.contactEmail,
+    data.contactPhone || null, data.startTime, data.endTime,
+    data.meetingType, data.notes || null
+  ).run()
+
+  return c.json({ data: { id, confirmation: 'Booking confirmed' } }, 201)
+})
+
+// ============================================================================
+// CALLS & MEETINGS
+ // ============================================================================
+
+ app.get('/api/calls', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM calls WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/calls', zValidator('json', z.object({
+  contactId: z.string().optional(),
+  direction: z.enum(['inbound', 'outbound']),
+  duration: z.number().optional(),
+  status: z.enum(['completed', 'missed', 'voicemail']),
+  notes: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const data = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO calls (id, tenant_id, user_id, contact_id, direction, duration, status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenantId, user.userId, data.contactId || null, data.direction, data.duration || 0, data.status, data.notes || null).run()
+
+  return c.json({ data: { id } }, 201)
+})
+
+app.get('/api/meetings', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM meetings WHERE tenant_id = ? ORDER BY start_time DESC LIMIT 100'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/meetings', zValidator('json', z.object({
+  title: z.string().min(1),
+  startTime: z.string(),
+  endTime: z.string(),
+  contactId: z.string().optional(),
+  attendees: z.array(z.string()).optional(),
+  meetingLink: z.string().optional(),
+  notes: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const data = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO meetings (id, tenant_id, owner_id, title, start_time, end_time, contact_id, attendees, meeting_link, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenantId, user.userId, data.title, data.startTime, data.endTime, data.contactId || null, JSON.stringify(data.attendees || []), data.meetingLink || null, data.notes || null).run()
+
+  return c.json({ data: { id } }, 201)
+})
+
+// ============================================================================
+// REVIEWS MANAGEMENT
+ // ============================================================================
+
+ app.get('/api/reviews', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM reviews WHERE tenant_id = ? ORDER BY created_at DESC'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/reviews/respond', zValidator('json', z.object({
+  reviewId: z.string(),
+  response: z.string().min(1),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { reviewId, response } = c.req.valid('json')
+
+  await c.env.DB.prepare(`
+    UPDATE reviews SET response = ?, responded_at = datetime('now'), status = 'responded'
+    WHERE id = ? AND tenant_id = ?
+  `).bind(response, reviewId, user.tenantId).run()
+
+  return c.json({ success: true })
+})
+
+app.post('/api/reviews/requests', zValidator('json', z.object({
+  contactId: z.string(),
+  method: z.enum(['email', 'sms']),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { contactId, method } = c.req.valid('json')
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO review_requests (id, tenant_id, contact_id, method, status)
+    VALUES (?, ?, ?, ?, 'pending')
+  `).bind(id, user.tenantId, contactId, method).run()
+
+  return c.json({ data: { id } }, 201)
+})
+
+// ============================================================================
+// AGENCY & WHITE-LABEL
+ // ============================================================================
+
+ app.get('/api/agency/accounts', async (c) => {
+  const user = await verifyToken(c)
+  if (!user || !['owner', 'admin'].includes(user.role as string)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const { results } = await c.env.DB.prepare(
+    'SELECT * FROM agency_accounts WHERE parent_tenant_id = ? ORDER BY created_at DESC'
+  ).bind(user.tenantId).all()
+
+  return c.json({ data: results || [] })
+})
+
+app.post('/api/agency/accounts', zValidator('json', z.object({
+  name: z.string().min(1),
+  domain: z.string(),
+  ownerEmail: z.string().email(),
+  ownerName: z.string(),
+  plan: z.enum(['starter', 'professional', 'enterprise']),
+  primaryColor: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user || !['owner', 'admin'].includes(user.role as string)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const data = c.req.valid('json')
+  const id = crypto.randomUUID()
+  const tenantId = crypto.randomUUID()
+
+  // Create sub-account tenant
+  await c.env.DB.prepare(`
+    INSERT INTO tenants (id, name, slug, plan, parent_id, settings)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(
+    tenantId, data.name, data.domain.split('.')[0],
+    data.plan, user.tenantId,
+    JSON.stringify({ primaryColor: data.primaryColor || '#6366f1', customDomain: data.domain })
+  ).run()
+
+  // Create owner user
+  const userId = crypto.randomUUID()
+  const tempPassword = crypto.randomUUID().slice(0, 12)
+
+  await c.env.DB.prepare(`
+    INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, role)
+    VALUES (?, ?, ?, ?, ?, ?, 'owner')
+  `).bind(userId, tenantId, data.ownerEmail, tempPassword, data.ownerName.split(' ')[0], data.ownerName.split(' ').slice(1).join(' ')).run()
+
+  await c.env.DB.prepare(`
+    INSERT INTO agency_accounts (id, parent_tenant_id, tenant_id, name, domain, owner_email, owner_name, plan, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+  `).bind(id, user.tenantId, tenantId, data.name, data.domain, data.ownerEmail, data.ownerName, data.plan).run()
+
+  return c.json({
+    data: { id, tenantId, tempPassword },
+    message: 'Sub-account created. Temp password: ' + tempPassword,
+  }, 201)
+})
+
+// ============================================================================
+// HELPDESK & TICKETING
+// ============================================================================
+
+// Get tickets
+app.get('/api/helpdesk/tickets', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { status, priority, assigned_to, page = '1', limit = '20' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  let query = 'SELECT * FROM helpdesk_tickets WHERE tenant_id = ?'
+  const params: any[] = [user.tenant_id]
+
+  if (status) {
+    query += ' AND status = ?'
+    params.push(status)
+  }
+  if (priority) {
+    query += ' AND priority = ?'
+    params.push(priority)
+  }
+  if (assigned_to) {
+    query += ' AND assigned_to = ?'
+    params.push(assigned_to)
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(parseInt(limit), offset)
+
+  const tickets = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: tickets.results })
+})
+
+// Create ticket
+app.post('/api/helpdesk/tickets', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { subject, description, priority = 'medium', category, channel = 'email', contact_id, assigned_to, related_deal_id, tags, custom_fields } = body
+
+  const id = crypto.randomUUID()
+  const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}`
+
+  await c.env.DB.prepare(`
+    INSERT INTO helpdesk_tickets (id, tenant_id, ticket_number, subject, description, priority, category, channel, contact_id, assigned_to, related_deal_id, tags, custom_fields)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenant_id, ticketNumber, subject, description, priority, category, channel, contact_id, assigned_to, related_deal_id, JSON.stringify(tags || []), JSON.stringify(custom_fields || {})).run()
+
+  return c.json({ data: { id, ticketNumber, subject } }, 201)
+})
+
+// Get single ticket with messages
+app.get('/api/helpdesk/tickets/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const ticket = await c.env.DB.prepare('SELECT * FROM helpdesk_tickets WHERE id = ? AND tenant_id = ?').bind(c.req.param('id'), user.tenant_id).first()
+  if (!ticket) return c.json({ error: 'Ticket not found' }, 404)
+
+  const messages = await c.env.DB.prepare('SELECT * FROM helpdesk_ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC').bind(c.req.param('id')).all()
+
+  return c.json({ data: { ...ticket, messages: messages.results } })
+})
+
+// Update ticket
+app.patch('/api/helpdesk/tickets/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { status, priority, assigned_to, assigned_team_id, tags, custom_fields } = body
+  const updates: string[] = []
+  const params: any[] = []
+
+  if (status) {
+    updates.push('status = ?')
+    params.push(status)
+    if (status === 'resolved' && !ticket.resolved_at) {
+      updates.push('resolved_at = datetime("now")')
+    }
+    if (status === 'closed' && !ticket.closed_at) {
+      updates.push('closed_at = datetime("now")')
+    }
+  }
+  if (priority) { updates.push('priority = ?'); params.push(priority) }
+  if (assigned_to !== undefined) { updates.push('assigned_to = ?'); params.push(assigned_to) }
+  if (assigned_team_id !== undefined) { updates.push('assigned_team_id = ?'); params.push(assigned_team_id) }
+  if (tags) { updates.push('tags = ?'); params.push(JSON.stringify(tags)) }
+  if (custom_fields) { updates.push('custom_fields = ?'); params.push(JSON.stringify(custom_fields)) }
+
+  if (updates.length === 0) return c.json({ error: 'No updates provided' }, 400)
+
+  params.push(c.req.param('id'), user.tenant_id)
+  await c.env.DB.prepare(`UPDATE helpdesk_tickets SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?`).bind(...params).run()
+
+  return c.json({ message: 'Ticket updated' })
+})
+
+// Add message to ticket
+app.post('/api/helpdesk/tickets/:id/messages', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { message, is_internal = false, attachments } = body
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO helpdesk_ticket_messages (id, tenant_id, ticket_id, user_id, contact_id, is_internal, message, attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenant_id, c.req.param('id'), user.id, body.contact_id || null, is_internal ? 1 : 0, message, JSON.stringify(attachments || [])).run()
+
+  // Update ticket last activity
+  await c.env.DB.prepare('UPDATE helpdesk_tickets SET updated_at = datetime("now") WHERE id = ?').bind(c.req.param('id')).run()
+
+  return c.json({ data: { id, message } }, 201)
+})
+
+// Get helpdesk teams
+app.get('/api/helpdesk/teams', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const teams = await c.env.DB.prepare('SELECT * FROM helpdesk_teams WHERE tenant_id = ? AND is_active = 1').bind(user.tenant_id).all()
+  return c.json({ data: teams.results })
+})
+
+// Get knowledge base articles
+app.get('/api/helpdesk/kb/articles', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { category_id, status = 'published', page = '1', limit = '20' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  let query = 'SELECT * FROM knowledge_base_articles WHERE tenant_id = ? AND status = ?'
+  const params: any[] = [user.tenant_id, status]
+
+  if (category_id) {
+    query += ' AND category_id = ?'
+    params.push(category_id)
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(parseInt(limit), offset)
+
+  const articles = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: articles.results })
+})
+
+// ============================================================================
+// LIVE CHAT
+// ============================================================================
+
+// Get chat sessions
+app.get('/api/live-chat/sessions', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { status, page = '1', limit = '20' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  let query = 'SELECT * FROM live_chat_sessions WHERE tenant_id = ?'
+  const params: any[] = [user.tenant_id]
+
+  if (status) {
+    query += ' AND status = ?'
+    params.push(status)
+  }
+
+  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+  params.push(parseInt(limit), offset)
+
+  const sessions = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: sessions.results })
+})
+
+// Get single chat session
+app.get('/api/live-chat/sessions/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const session = await c.env.DB.prepare('SELECT * FROM live_chat_sessions WHERE id = ? AND tenant_id = ?').bind(c.req.param('id'), user.tenant_id).first()
+  if (!session) return c.json({ error: 'Session not found' }, 404)
+
+  return c.json({ data: session })
+})
+
+// Start new chat session (visitor)
+app.post('/api/live-chat/sessions', async (c) => {
+  const body = await c.req.json()
+  const { tenant_id, visitor_id, visitor_name, visitor_email, country, city, browser, os, current_page } = body
+
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO live_chat_sessions (id, tenant_id, visitor_id, visitor_name, visitor_email, status, country, city, browser, os, current_page, started_at)
+    VALUES (?, ?, ?, ?, ?, 'waiting', ?, ?, ?, ?, ?, datetime('now'))
+  `).bind(id, tenant_id, visitor_id, visitor_name, visitor_email, country, city, browser, os, current_page).run()
+
+  return c.json({ data: { id, status: 'waiting' } }, 201)
+})
+
+// Send message in chat
+app.post('/api/live-chat/sessions/:id/messages', async (c) => {
+  const body = await c.req.json()
+  const { sender_type, sender_id, message, direction } = body
+
+  const session = await c.env.DB.prepare('SELECT * FROM live_chat_sessions WHERE id = ?').bind(c.req.param('id')).first()
+  if (!session) return c.json({ error: 'Session not found' }, 404)
+
+  const messages = JSON.parse(session.messages as string || '[]')
+  messages.push({
+    id: crypto.randomUUID(),
+    sender_type,
+    sender_id,
+    message,
+    direction,
+    timestamp: new Date().toISOString(),
+  })
+
+  await c.env.DB.prepare('UPDATE live_chat_sessions SET messages = ? WHERE id = ?').bind(JSON.stringify(messages), c.req.param('id')).run()
+
+  // Update session status to active if this is first agent message
+  if (sender_type === 'agent' && session.status === 'waiting') {
+    await c.env.DB.prepare('UPDATE live_chat_sessions SET status = \'active\', assigned_to = ? WHERE id = ?').bind(sender_id, c.req.param('id')).run()
+  }
+
+  return c.json({ data: { success: true } })
+})
+
+// End chat session
+app.post('/api/live-chat/sessions/:id/end', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { rating, feedback } = body
+
+  await c.env.DB.prepare(`
+    UPDATE live_chat_sessions SET status = 'ended', ended_by = ?, ended_at = datetime('now'), rating = ?, feedback = ?
+    WHERE id = ?
+  `).bind(user.id, rating || null, feedback || null, c.req.param('id')).run()
+
+  return c.json({ message: 'Chat session ended' })
+})
+
+// Get chat widgets
+app.get('/api/live-chat/widgets', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const widgets = await c.env.DB.prepare('SELECT * FROM live_chat_widgets WHERE tenant_id = ?').bind(user.tenant_id).all()
+  return c.json({ data: widgets.results })
+})
+
+// ============================================================================
+// AI CHATBOT BUILDER
+// ============================================================================
+
+// Get chatbots
+app.get('/api/ai-chatbots', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const chatbots = await c.env.DB.prepare('SELECT * FROM ai_chatbots WHERE tenant_id = ? ORDER BY created_at DESC').bind(user.tenant_id).all()
+  return c.json({ data: chatbots.results })
+})
+
+// Create chatbot
+app.post('/api/ai-chatbots', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { name, description, welcome_message, fallback_message, config, personality, tone, language, is_public } = body
+
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO ai_chatbots (id, tenant_id, name, description, welcome_message, fallback_message, config, personality, tone, language, is_public)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenant_id, name, description, welcome_message, fallback_message, JSON.stringify(config || {}), personality, tone || 'professional', language || 'en', is_public ? 1 : 0).run()
+
+  return c.json({ data: { id, name } }, 201)
+})
+
+// Get single chatbot with flows
+app.get('/api/ai-chatbots/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const chatbot = await c.env.DB.prepare('SELECT * FROM ai_chatbots WHERE id = ? AND tenant_id = ?').bind(c.req.param('id'), user.tenant_id).first()
+  if (!chatbot) return c.json({ error: 'Chatbot not found' }, 404)
+
+  const flows = await c.env.DB.prepare('SELECT * FROM ai_chatbot_flows WHERE chatbot_id = ? ORDER BY priority ASC').bind(c.req.param('id')).all()
+
+  return c.json({ data: { ...chatbot, flows: flows.results } })
+})
+
+// Update chatbot
+app.patch('/api/ai-chatbots/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { name, description, welcome_message, fallback_message, config, personality, tone, language, is_active, is_public } = body
+
+  const updates: string[] = []
+  const params: any[] = []
+
+  if (name) { updates.push('name = ?'); params.push(name) }
+  if (description !== undefined) { updates.push('description = ?'); params.push(description) }
+  if (welcome_message !== undefined) { updates.push('welcome_message = ?'); params.push(welcome_message) }
+  if (fallback_message !== undefined) { updates.push('fallback_message = ?'); params.push(fallback_message) }
+  if (config) { updates.push('config = ?'); params.push(JSON.stringify(config)) }
+  if (personality !== undefined) { updates.push('personality = ?'); params.push(personality) }
+  if (tone) { updates.push('tone = ?'); params.push(tone) }
+  if (language) { updates.push('language = ?'); params.push(language) }
+  if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0) }
+  if (is_public !== undefined) { updates.push('is_public = ?'); params.push(is_public ? 1 : 0) }
+
+  if (updates.length === 0) return c.json({ error: 'No updates provided' }, 400)
+
+  params.push(c.req.param('id'), user.tenant_id)
+  await c.env.DB.prepare(`UPDATE ai_chatbots SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?`).bind(...params).run()
+
+  return c.json({ message: 'Chatbot updated' })
+})
+
+// Delete chatbot
+app.delete('/api/ai-chatbots/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  await c.env.DB.prepare('DELETE FROM ai_chatbots WHERE id = ? AND tenant_id = ?').bind(c.req.param('id'), user.tenant_id).run()
+
+  return c.json({ message: 'Chatbot deleted' })
+})
+
+// Get chatbot flows
+app.get('/api/ai-chatbots/:id/flows', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const flows = await c.env.DB.prepare('SELECT * FROM ai_chatbot_flows WHERE chatbot_id = ? ORDER BY priority ASC').bind(c.req.param('id')).all()
+  return c.json({ data: flows.results })
+})
+
+// Create chatbot flow
+app.post('/api/ai-chatbots/:id/flows', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { name, trigger, trigger_type, response, actions, conditions, next_flow_id, is_default, priority } = body
+
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO ai_chatbot_flows (id, chatbot_id, name, trigger, trigger_type, response, actions, conditions, next_flow_id, is_default, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, c.req.param('id'), name, trigger, trigger_type || 'keyword', response, JSON.stringify(actions || []), JSON.stringify(conditions || []), next_flow_id, is_default ? 1 : 0, priority || 0).run()
+
+  return c.json({ data: { id, name } }, 201)
+})
+
+// Update chatbot flow
+app.patch('/api/ai-chatbots/:flows/flowId', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const updates: string[] = []
+  const params: any[] = []
+
+  const fields = ['name', 'trigger', 'trigger_type', 'response', 'actions', 'conditions', 'next_flow_id', 'is_default', 'priority', 'is_active']
+  for (const field of fields) {
+    if (body[field] !== undefined) {
+      updates.push(`${field} = ?`)
+      params.push(field === 'is_default' || field === 'is_active' ? (body[field] ? 1 : 0) : body[field])
+    }
+  }
+
+  if (updates.length === 0) return c.json({ error: 'No updates provided' }, 400)
+
+  const flowId = c.req.param('flowId')
+  params.push(flowId, user.tenant_id)
+
+  await c.env.DB.prepare(`UPDATE ai_chatbot_flows SET ${updates.join(', ')} WHERE id = ? AND chatbot_id IN (SELECT id FROM ai_chatbots WHERE tenant_id = ?)`).bind(...params).run()
+
+  return c.json({ message: 'Flow updated' })
+})
+
+// Get chatbot conversations (analytics)
+app.get('/api/ai-chatbots/:id/conversations', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { page = '1', limit = '20' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  const conversations = await c.env.DB.prepare(`
+    SELECT * FROM ai_chatbot_conversations WHERE chatbot_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+  `).bind(c.req.param('id'), parseInt(limit), offset).all()
+
+  return c.json({ data: conversations.results })
+})
+
+// Public chatbot conversation (for embedded chat)
+app.post('/api/public/chatbots/:id/chat', async (c) => {
+  const chatbot = await c.env.DB.prepare('SELECT * FROM ai_chatbots WHERE id = ? AND is_active = 1 AND (is_public = 1 OR tenant_id = ?)').bind(c.req.param('id'), c.req.header('X-Tenant-ID') || '').first()
+  if (!chatbot) return c.json({ error: 'Chatbot not found or inactive' }, 404)
+
+  const body = await c.req.json()
+  const { message, session_id, contact_id } = body
+
+  // Find matching flow
+  const flows = await c.env.DB.prepare('SELECT * FROM ai_chatbot_flows WHERE chatbot_id = ? AND is_active = 1 ORDER BY priority ASC').bind(c.req.param('id')).all()
+
+  let response = chatbot.fallback_message || 'I\'m sorry, I didn\'t understand that. Let me connect you with an agent.'
+  let matchedFlow = null
+
+  for (const flow of flows.results as any[]) {
+    if (flow.trigger_type === 'always') {
+      matchedFlow = flow
+      break
+    }
+    if (flow.trigger_type === 'keyword' && message.toLowerCase().includes(flow.trigger.toLowerCase())) {
+      matchedFlow = flow
+      break
+    }
+  }
+
+  if (matchedFlow) {
+    response = matchedFlow.response
+  } else if (c.env.AI) {
+    // Use Workers AI for dynamic responses
+    try {
+      const aiResponse = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+        messages: [
+          { role: 'system', content: `You are ${chatbot.name}, a ${chatbot.tone || 'professional'} AI assistant. ${chatbot.personality || 'You are helpful and concise.'}` },
+          { role: 'user', content: message }
+        ],
+        max_tokens: 256,
+      })
+      response = (aiResponse as any).response || response
+    } catch (e) {
+      console.error('AI response error:', e)
+    }
+  }
+
+  // Create conversation log
+  const convId = session_id || crypto.randomUUID()
+  const existingConv = await c.env.DB.prepare('SELECT * FROM ai_chatbot_conversations WHERE id = ?').bind(convId).first()
+
+  if (existingConv) {
+    const messages = JSON.parse(existingConv.messages as string || '[]')
+    messages.push({ role: 'user', content: message, timestamp: new Date().toISOString() })
+    messages.push({ role: 'bot', content: response, timestamp: new Date().toISOString() })
+    await c.env.DB.prepare('UPDATE ai_chatbot_conversations SET messages = ? WHERE id = ?').bind(JSON.stringify(messages), convId).run()
+  } else {
+    await c.env.DB.prepare(`
+      INSERT INTO ai_chatbot_conversations (id, chatbot_id, session_id, contact_id, messages)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(convId, c.req.param('id'), session_id, contact_id, JSON.stringify([
+      { role: 'user', content: message, timestamp: new Date().toISOString() },
+      { role: 'bot', content: response, timestamp: new Date().toISOString() }
+    ])).run()
+  }
+
+  return c.json({ response, session_id: convId })
+})
+
+// ============================================================================
+// INTEGRATIONS
+// ============================================================================
+
+// Get integrations
+app.get('/api/integrations', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const integrations = await c.env.DB.prepare('SELECT id, tenant_id, provider, is_active, created_at FROM integrations WHERE tenant_id = ?').bind(user.tenant_id).all()
+  return c.json({ data: integrations.results })
+})
+
+// Add integration
+app.post('/api/integrations', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { provider, access_token, refresh_token, expires_at, metadata } = body
+  const id = crypto.randomUUID()
+
+  await c.env.DB.prepare(`
+    INSERT INTO integrations (id, tenant_id, provider, access_token, refresh_token, expires_at, metadata)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).bind(id, user.tenant_id, provider, access_token, refresh_token, expires_at, JSON.stringify(metadata || {})).run()
+
+  return c.json({ data: { id, provider } }, 201)
+})
+
+// Update integration
+app.patch('/api/integrations/:provider', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = await c.req.json()
+  const { access_token, refresh_token, expires_at, is_active, metadata } = body
+
+  const updates: string[] = []
+  const params: any[] = []
+
+  if (access_token) { updates.push('access_token = ?'); params.push(access_token) }
+  if (refresh_token) { updates.push('refresh_token = ?'); params.push(refresh_token) }
+  if (expires_at) { updates.push('expires_at = ?'); params.push(expires_at) }
+  if (is_active !== undefined) { updates.push('is_active = ?'); params.push(is_active ? 1 : 0) }
+  if (metadata) { updates.push('metadata = ?'); params.push(JSON.stringify(metadata)) }
+
+  if (updates.length === 0) return c.json({ error: 'No updates provided' }, 400)
+
+  params.push(c.req.param('provider'), user.tenant_id)
+  await c.env.DB.prepare(`UPDATE integrations SET ${updates.join(', ')} WHERE provider = ? AND tenant_id = ?`).bind(...params).run()
+
+  return c.json({ message: 'Integration updated' })
+})
+
+// Delete integration
+app.delete('/api/integrations/:provider', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  await c.env.DB.prepare('DELETE FROM integrations WHERE provider = ? AND tenant_id = ?').bind(c.req.param('provider'), user.tenant_id).run()
+
+  return c.json({ message: 'Integration deleted' })
+})
+
+// Integration OAuth callback
+app.get('/api/integrations/:provider/callback', async (c) => {
+  const { code, state } = c.req.query()
+  const provider = c.req.param('provider')
+
+  // Handle OAuth callback based on provider
+  // This would redirect to the frontend with success/error
+  return c.redirect(`/settings/integrations?provider=${provider}&status=callback_received`)
+})
+
+// ============================================================================
+// WORKFLOW TEMPLATES & ANALYTICS
+// ============================================================================
+
+// Get workflow templates
+app.get('/api/workflow-templates', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { category, page = '1', limit = '20' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  let query = 'SELECT * FROM workflow_templates WHERE is_public = 1'
+  const params: any[] = []
+
+  if (category) {
+    query += ' AND category = ?'
+    params.push(category)
+  }
+
+  query += ' ORDER BY usage_count DESC, rating DESC LIMIT ? OFFSET ?'
+  params.push(parseInt(limit), offset)
+
+  const templates = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: templates.results })
+})
+
+// Create workflow from template
+app.post('/api/workflow-templates/:id/use', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const template = await c.env.DB.prepare('SELECT * FROM workflow_templates WHERE id = ?').bind(c.req.param('id')).first()
+  if (!template) return c.json({ error: 'Template not found' }, 404)
+
+  // Create new automation from template
+  const automationId = crypto.randomUUID()
+  await c.env.DB.prepare(`
+    INSERT INTO automations (id, tenant_id, name, description, trigger, trigger_config, actions, conditions)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(automationId, user.tenant_id, template.name, template.description, template.trigger, template.trigger_config, template.actions, template.conditions).run()
+
+  // Increment template usage
+  await c.env.DB.prepare('UPDATE workflow_templates SET usage_count = usage_count + 1 WHERE id = ?').bind(c.req.param('id')).run()
+
+  return c.json({ data: { automation_id: automationId, name: template.name } }, 201)
+})
+
+// Get workflow executions (analytics)
+app.get('/api/workflow-executions', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { workflow_id, status, page = '1', limit = '20' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  let query = `SELECT we.*, a.name as workflow_name FROM workflow_executions we
+    JOIN automations a ON we.workflow_id = a.id
+    WHERE a.tenant_id = ?`
+  const params: any[] = [user.tenant_id]
+
+  if (workflow_id) {
+    query += ' AND we.workflow_id = ?'
+    params.push(workflow_id)
+  }
+  if (status) {
+    query += ' AND we.status = ?'
+    params.push(status)
+  }
+
+  query += ' ORDER BY we.started_at DESC LIMIT ? OFFSET ?'
+  params.push(parseInt(limit), offset)
+
+  const executions = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: executions.results })
+})
+
+// Get workflow execution stats
+app.get('/api/workflow-executions/stats', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { workflow_id } = c.req.query()
+
+  let query = `SELECT
+    COUNT(*) as total,
+    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+    AVG(CASE WHEN execution_time > 0 THEN execution_time ELSE NULL END) as avg_execution_time
+  FROM workflow_executions we
+  JOIN automations a ON we.workflow_id = a.id
+  WHERE a.tenant_id = ?`
+  const params: any[] = [user.tenant_id]
+
+  if (workflow_id) {
+    query += ' AND we.workflow_id = ?'
+    params.push(workflow_id)
+  }
+
+  const stats = await c.env.DB.prepare(query).bind(...params).first()
+  return c.json({ data: stats })
+})
+
+// ============================================================================
+// PUBLIC PORTAL API (No Auth Required - For Customer Portal)
+// ============================================================================
+
+// Public Knowledge Base - no auth required
+app.get('/api/public/kb/articles', async (c) => {
+  const { category, search, page = '1', limit = '10' } = c.req.query()
+  const offset = (parseInt(page) - 1) * parseInt(limit)
+
+  let query = 'SELECT id, title, content, category, excerpt, tags, author_name, views_count, helpful_score, status, created_at, updated_at FROM knowledge_base_articles WHERE status = ?'
+  const params: any[] = ['published']
+
+  if (category) {
+    query += ' AND category = ?'
+    params.push(category)
+  }
+  if (search) {
+    query += ' AND (title LIKE ? OR content LIKE ? OR excerpt LIKE ?)'
+    const searchTerm = `%${search}%`
+    params.push(searchTerm, searchTerm, searchTerm)
+  }
+
+  query += ' ORDER BY views_count DESC, helpful_score DESC LIMIT ? OFFSET ?'
+  params.push(parseInt(limit), offset)
+
+  const articles = await c.env.DB.prepare(query).bind(...params).all()
+  return c.json({ data: articles.results })
+})
+
+// Public Knowledge Base - single article
+app.get('/api/public/kb/articles/:id', async (c) => {
+  const article = await c.env.DB.prepare(
+    'SELECT id, title, content, category, excerpt, tags, author_name, views_count, helpful_score, status, created_at, updated_at FROM knowledge_base_articles WHERE id = ? AND status = ?'
+  ).bind(c.req.param('id'), 'published').first()
+
+  if (!article) return c.json({ error: 'Article not found' }, 404)
+
+  // Increment views
+  await c.env.DB.prepare('UPDATE knowledge_base_articles SET views_count = views_count + 1 WHERE id = ?').bind(c.req.param('id')).run()
+
+  return c.json({ data: article })
+})
+
+// Public Knowledge Base - categories
+app.get('/api/public/kb/categories', async (c) => {
+  const categories = await c.env.DB.prepare(`
+    SELECT c.id, c.name, c.description, c.icon, c.sort_order,
+           COUNT(a.id) as article_count
+    FROM knowledge_base_categories c
+    LEFT JOIN knowledge_base_articles a ON a.category = c.name AND a.status = 'published'
+    GROUP BY c.id
+    ORDER BY c.sort_order ASC
+  `).all()
+
+  return c.json({ data: categories.results })
+})
+
+// Public ticket submission (for customers without account)
+app.post('/api/public/tickets', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { subject, description, email, name, category, priority } = body
+
+    if (!subject || !email || !name) {
+      return c.json({ error: 'Name, email, and subject are required' }, 400)
+    }
+
+    // Simple email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return c.json({ error: 'Invalid email address' }, 400)
+    }
+
+    const ticketId = crypto.randomUUID()
+    const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}`
+
+    // Create a placeholder contact or find existing
+    let contactId: string | null = null
+
+    // For public tickets, we create a simple contact record
+    const existingContact = await c.env.DB.prepare('SELECT id FROM contacts WHERE email = ?').bind(email).first()
+    if (existingContact) {
+      contactId = existingContact.id
+    }
+
+    // Create ticket in helpdesk
+    await c.env.DB.prepare(`
+      INSERT INTO helpdesk_tickets (id, tenant_id, ticket_number, subject, description, priority, category, channel, contact_id, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      ticketId,
+      'default', // tenant_id - in production would need proper routing
+      ticketNumber,
+      subject,
+      description || '',
+      priority || 'medium',
+      category || 'General',
+      'portal',
+      contactId,
+      'open'
+    ).run()
+
+    return c.json({
+      data: {
+        id: ticketId,
+        ticket_number: ticketNumber,
+        status: 'open',
+        message: 'Your ticket has been submitted successfully. You will receive an email confirmation.'
+      }
+    }, 201)
+  } catch (err) {
+    console.error('Public ticket creation error:', err)
+    return c.json({ error: 'Failed to create ticket' }, 500)
+  }
+})
+
+// Check ticket status (public - by ticket number and email)
+app.get('/api/public/tickets/:ticketNumber', async (c) => {
+  const { ticketNumber } = c.req.param()
+  const { email } = c.req.query()
+
+  if (!email) {
+    return c.json({ error: 'Email is required to view ticket status' }, 400)
+  }
+
+  // Simple email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(email)) {
+    return c.json({ error: 'Invalid email address' }, 400)
+  }
+
+  const ticket = await c.env.DB.prepare(`
+    SELECT ht.id, ht.ticket_number, ht.subject, ht.status, ht.priority, ht.category,
+           ht.created_at, ht.updated_at,
+           COUNT(htm.id) as message_count
+    FROM helpdesk_tickets ht
+    LEFT JOIN helpdesk_ticket_messages htm ON htm.ticket_id = ht.id AND htm.is_internal = 0
+    WHERE ht.ticket_number = ?
+    GROUP BY ht.id
+  `).bind(ticketNumber).first()
+
+  if (!ticket) {
+    return c.json({ error: 'Ticket not found' }, 404)
+  }
+
+  return c.json({ data: ticket })
+})
+
+// ============================================================================
 // ERROR HANDLING
 // ============================================================================
 

@@ -562,3 +562,575 @@ CREATE TRIGGER update_tasks_timestamp AFTER UPDATE ON tasks
 BEGIN
   UPDATE tasks SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
+
+-- ============================================================================
+-- SMS & TEMPLATES (Twilio Integration)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sms_templates (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  variables TEXT DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sms_logs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT,
+  campaign_id TEXT,
+  direction TEXT CHECK(direction IN ('outbound', 'inbound')),
+  phone TEXT NOT NULL,
+  message TEXT NOT NULL,
+  status TEXT DEFAULT 'queued' CHECK(status IN ('queued', 'sent', 'delivered', 'failed', 'undelivered')),
+  twilio_sid TEXT,
+  sent_at TEXT,
+  delivered_at TEXT,
+  error_message TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (campaign_id) REFERENCES sms_campaigns(id) ON DELETE SET NULL
+);
+
+-- ============================================================================
+-- CALENDAR & BOOKING
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS calendar_availability (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT,
+  day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  is_available INTEGER DEFAULT 1,
+  buffer_minutes INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS calendar_bookings (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT,
+  user_id TEXT,
+  contact_name TEXT NOT NULL,
+  contact_email TEXT NOT NULL,
+  contact_phone TEXT,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  meeting_type TEXT DEFAULT 'video' CHECK(meeting_type IN ('video', 'phone', 'in-person')),
+  status TEXT DEFAULT 'confirmed' CHECK(status IN ('pending', 'confirmed', 'cancelled', 'completed')),
+  notes TEXT,
+  video_link TEXT,
+  reminder_sent INTEGER DEFAULT 0,
+  cancel_reason TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- ============================================================================
+-- REVIEWS MANAGEMENT
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS reviews (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT,
+  platform TEXT NOT NULL CHECK(platform IN ('google', 'facebook', 'yelp', 'trustpilot', 'other')),
+  source TEXT,
+  rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+  author_name TEXT NOT NULL,
+  author_email TEXT,
+  content TEXT,
+  response TEXT,
+  responded_at TEXT,
+  sentiment TEXT DEFAULT 'neutral' CHECK(sentiment IN ('positive', 'neutral', 'negative')),
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'responded', 'flagged', 'hidden')),
+  flagged_reason TEXT,
+  external_id TEXT,
+  external_url TEXT,
+  posted_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS review_requests (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT NOT NULL,
+  method TEXT NOT NULL CHECK(method IN ('email', 'sms')),
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'sent', 'delivered', 'completed', 'failed')),
+  template TEXT,
+  rating INTEGER,
+  review_link TEXT,
+  sent_at TEXT,
+  completed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- AGENCY & WHITE-LABEL
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS agency_accounts (
+  id TEXT PRIMARY KEY,
+  parent_tenant_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  domain TEXT,
+  owner_name TEXT NOT NULL,
+  owner_email TEXT NOT NULL,
+  owner_phone TEXT,
+  plan TEXT DEFAULT 'starter' CHECK(plan IN ('starter', 'professional', 'enterprise')),
+  status TEXT DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'cancelled', 'trial')),
+  primary_color TEXT DEFAULT '#6366f1',
+  logo_url TEXT,
+  trial_ends_at TEXT,
+  billing_email TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (parent_tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS agency_commissions (
+  id TEXT PRIMARY KEY,
+  agency_account_id TEXT NOT NULL,
+  amount REAL NOT NULL,
+  currency TEXT DEFAULT 'USD',
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'paid', 'cancelled')),
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  paid_at TEXT,
+  invoice_id TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (agency_account_id) REFERENCES agency_accounts(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- HELPDESK & TICKETING
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS helpdesk_tickets (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  ticket_number TEXT UNIQUE NOT NULL,
+  subject TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'open' CHECK(status IN ('open', 'in_progress', 'pending', 'resolved', 'closed', 'spam')),
+  priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'critical')),
+  category TEXT,
+  channel TEXT DEFAULT 'email' CHECK(channel IN ('email', 'chat', 'phone', 'web', 'api', 'social')),
+  contact_id TEXT,
+  assigned_to TEXT,
+  assigned_team_id TEXT,
+  related_deal_id TEXT,
+  related_contact_id TEXT,
+  sla_due_at TEXT,
+  first_response_at TEXT,
+  resolved_at TEXT,
+  closed_at TEXT,
+  tags TEXT DEFAULT '[]',
+  custom_fields TEXT DEFAULT '{}',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (related_deal_id) REFERENCES deals(id) ON DELETE SET NULL,
+  FOREIGN KEY (related_contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS helpdesk_ticket_messages (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  ticket_id TEXT NOT NULL,
+  user_id TEXT,
+  contact_id TEXT,
+  is_internal INTEGER DEFAULT 0,
+  message TEXT NOT NULL,
+  attachments TEXT DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (ticket_id) REFERENCES helpdesk_tickets(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS helpdesk_teams (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  members TEXT DEFAULT '[]',
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS helpdesk_sla_policies (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  conditions TEXT DEFAULT '{}',
+  first_response_time INTEGER DEFAULT 60,
+  resolution_time INTEGER DEFAULT 1440,
+  priority TEXT NOT NULL,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS helpdesk_csat_surveys (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  ticket_id TEXT NOT NULL,
+  rating INTEGER CHECK(rating BETWEEN 1 AND 5),
+  feedback TEXT,
+  responded_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (ticket_id) REFERENCES helpdesk_tickets(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- KNOWLEDGE BASE
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS knowledge_base_categories (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  description TEXT,
+  icon TEXT,
+  sort_order INTEGER DEFAULT 0,
+  is_published INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  UNIQUE(tenant_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_base_articles (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  category_id TEXT,
+  title TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  content TEXT NOT NULL,
+  summary TEXT,
+  author_id TEXT,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'published', 'archived')),
+  view_count INTEGER DEFAULT 0,
+  helpful_count INTEGER DEFAULT 0,
+  not_helpful_count INTEGER DEFAULT 0,
+  seo_title TEXT,
+  seo_description TEXT,
+  tags TEXT DEFAULT '[]',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES knowledge_base_categories(id) ON DELETE SET NULL,
+  FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE(tenant_id, slug)
+);
+
+-- ============================================================================
+-- LIVE CHAT
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS live_chat_sessions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  contact_id TEXT,
+  visitor_id TEXT,
+  visitor_name TEXT,
+  visitor_email TEXT,
+  status TEXT DEFAULT 'waiting' CHECK(status IN ('waiting', 'active', 'ended')),
+  assigned_to TEXT,
+  messages TEXT DEFAULT '[]',
+  started_at TEXT,
+  ended_at TEXT,
+  ended_by TEXT,
+  rating INTEGER,
+  feedback TEXT,
+  country TEXT,
+  city TEXT,
+  browser TEXT,
+  os TEXT,
+  current_page TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS live_chat_widgets (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  config TEXT DEFAULT '{}',
+  offline_message TEXT,
+  greeting TEXT,
+  theme TEXT DEFAULT '{}',
+  branding TEXT DEFAULT '{}',
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS live_chat_routing_rules (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  conditions TEXT DEFAULT '[]',
+  target_type TEXT NOT NULL CHECK(target_type IN ('user', 'team', 'round_robin')),
+  target_id TEXT,
+  priority INTEGER DEFAULT 0,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- AI CHATBOT BUILDER
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ai_chatbots (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  avatar_url TEXT,
+  welcome_message TEXT,
+  fallback_message TEXT,
+  config TEXT DEFAULT '{}',
+  personality TEXT,
+  tone TEXT DEFAULT 'professional',
+  language TEXT DEFAULT 'en',
+  is_active INTEGER DEFAULT 1,
+  is_public INTEGER DEFAULT 0,
+  embed_code TEXT,
+  version INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ai_chatbot_flows (
+  id TEXT PRIMARY KEY,
+  chatbot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  trigger_type TEXT DEFAULT 'keyword' CHECK(trigger_type IN ('keyword', 'intent', 'button', 'menu', 'always')),
+  response TEXT,
+  actions TEXT DEFAULT '[]',
+  conditions TEXT DEFAULT '[]',
+  next_flow_id TEXT,
+  is_default INTEGER DEFAULT 0,
+  priority INTEGER DEFAULT 0,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (chatbot_id) REFERENCES ai_chatbots(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ai_chatbot_conversations (
+  id TEXT PRIMARY KEY,
+  chatbot_id TEXT NOT NULL,
+  session_id TEXT,
+  contact_id TEXT,
+  started_at TEXT DEFAULT (datetime('now')),
+  ended_at TEXT,
+  messages TEXT DEFAULT '[]',
+  rating INTEGER,
+  feedback TEXT,
+  handoff_to_agent INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (chatbot_id) REFERENCES ai_chatbots(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS ai_chatbot_lead_qualification (
+  id TEXT PRIMARY KEY,
+  chatbot_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  questions TEXT DEFAULT '[]',
+  score_fields TEXT DEFAULT '{}',
+  threshold INTEGER DEFAULT 50,
+  auto_handoff INTEGER DEFAULT 1,
+  notify_users TEXT DEFAULT '[]',
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (chatbot_id) REFERENCES ai_chatbots(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS ai_chatbot_knowledge_sources (
+  id TEXT PRIMARY KEY,
+  chatbot_id TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK(source_type IN ('url', 'file', 'text', 'kb_article')),
+  source_content TEXT NOT NULL,
+  title TEXT,
+  is_active INTEGER DEFAULT 1,
+  last_indexed TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (chatbot_id) REFERENCES ai_chatbots(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- INTEGRATIONS (Enhanced)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS integration_configs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  integration_type TEXT NOT NULL,
+  config_key TEXT NOT NULL,
+  config_value TEXT NOT NULL,
+  is_encrypted INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  UNIQUE(tenant_id, integration_type, config_key)
+);
+
+CREATE TABLE IF NOT EXISTS integration_sync_logs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  integration_type TEXT NOT NULL,
+  direction TEXT CHECK(direction IN ('inbound', 'outbound')),
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'success', 'failed')),
+  records_synced INTEGER DEFAULT 0,
+  error_message TEXT,
+  started_at TEXT,
+  completed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- WORKFLOW TEMPLATES & ANALYTICS
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS workflow_templates (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT,
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  trigger TEXT NOT NULL,
+  actions TEXT DEFAULT '[]',
+  conditions TEXT DEFAULT '[]',
+  node_layout TEXT DEFAULT '[]',
+  is_public INTEGER DEFAULT 0,
+  usage_count INTEGER DEFAULT 0,
+  rating REAL DEFAULT 0,
+  created_by TEXT,
+  is_featured INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_executions (
+  id TEXT PRIMARY KEY,
+  workflow_id TEXT NOT NULL,
+  trigger_type TEXT,
+  trigger_data TEXT DEFAULT '{}',
+  status TEXT DEFAULT 'running' CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+  started_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT,
+  error_message TEXT,
+  execution_time INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (workflow_id) REFERENCES automations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS workflow_execution_logs (
+  id TEXT PRIMARY KEY,
+  execution_id TEXT NOT NULL,
+  node_id TEXT,
+  node_type TEXT,
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'success', 'failed', 'skipped')),
+  input_data TEXT DEFAULT '{}',
+  output_data TEXT DEFAULT '{}',
+  error_message TEXT,
+  started_at TEXT,
+  completed_at TEXT,
+  execution_order INTEGER DEFAULT 0,
+  FOREIGN KEY (execution_id) REFERENCES workflow_executions(id) ON DELETE CASCADE
+);
+
+-- ============================================================================
+-- INDEXES (Additional)
+-- ============================================================================
+CREATE INDEX idx_tickets_tenant ON helpdesk_tickets(tenant_id);
+CREATE INDEX idx_tickets_status ON helpdesk_tickets(status);
+CREATE INDEX idx_tickets_assigned ON helpdesk_tickets(assigned_to);
+CREATE INDEX idx_tickets_priority ON helpdesk_tickets(priority);
+
+CREATE INDEX idx_live_chat_tenant ON live_chat_sessions(tenant_id);
+CREATE INDEX idx_live_chat_status ON live_chat_sessions(status);
+
+CREATE INDEX idx_chatbots_tenant ON ai_chatbots(tenant_id);
+CREATE INDEX idx_chatbots_active ON ai_chatbots(is_active);
+
+CREATE INDEX idx_kb_articles_tenant ON knowledge_base_articles(tenant_id);
+CREATE INDEX idx_kb_articles_category ON knowledge_base_articles(category_id);
+CREATE INDEX idx_kb_articles_status ON knowledge_base_articles(status);
+
+CREATE INDEX idx_workflow_executions_workflow ON workflow_executions(workflow_id);
+CREATE INDEX idx_workflow_executions_status ON workflow_executions(status);
+CREATE INDEX idx_workflow_executions_started ON workflow_executions(started_at DESC);
+
+CREATE TABLE IF NOT EXISTS workflow_versions (
+  id TEXT PRIMARY KEY,
+  workflow_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  trigger TEXT NOT NULL,
+  trigger_config TEXT DEFAULT '{}',
+  actions TEXT DEFAULT '[]',
+  conditions TEXT DEFAULT '[]',
+  node_layout TEXT DEFAULT '[]',
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (workflow_id) REFERENCES automations(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TRIGGER update_helpdesk_tickets_timestamp AFTER UPDATE ON helpdesk_tickets
+BEGIN
+  UPDATE helpdesk_tickets SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_kb_categories_timestamp AFTER UPDATE ON knowledge_base_categories
+BEGIN
+  UPDATE knowledge_base_categories SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_kb_articles_timestamp AFTER UPDATE ON knowledge_base_articles
+BEGIN
+  UPDATE knowledge_base_articles SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_live_chat_widgets_timestamp AFTER UPDATE ON live_chat_widgets
+BEGIN
+  UPDATE live_chat_widgets SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_ai_chatbots_timestamp AFTER UPDATE ON ai_chatbots
+BEGIN
+  UPDATE ai_chatbots SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
