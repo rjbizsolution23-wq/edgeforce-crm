@@ -842,6 +842,74 @@ class ApiClient {
     return this.request<any>(`/api/invoices/${id}/paid`, { method: 'POST' })
   }
 
+  // Payments
+  async getPayments(invoiceId: string) {
+    return this.request<any[]>(`/api/payments/invoice/${invoiceId}`)
+  }
+
+  async createPayment(data: { invoiceId: string; amount: number }) {
+    return this.request<any>('/api/payments', { method: 'POST', body: data })
+  }
+
+  // Notifications
+  async getNotifications(params?: { limit?: number; unread?: boolean }) {
+    const query = new URLSearchParams()
+    if (params?.limit) query.set('limit', String(params.limit))
+    if (params?.unread) query.set('unread', 'true')
+    const queryString = query.toString()
+    return this.request<{ data: any[]; unreadCount: number }>(`/api/notifications${queryString ? `?${queryString}` : ''}`)
+  }
+
+  async createNotification(data: {
+    userId: string
+    type: string
+    title: string
+    message?: string
+    data?: Record<string, unknown>
+    actionUrl?: string
+  }) {
+    return this.request<any>('/api/notifications', { method: 'POST', body: data })
+  }
+
+  async markNotificationRead(notificationId: string) {
+    return this.request<any>(`/api/notifications/${notificationId}/read`, { method: 'PUT' })
+  }
+
+  async markAllNotificationsRead() {
+    return this.request<any>('/api/notifications/read-all', { method: 'POST' })
+  }
+
+  async deleteNotification(notificationId: string) {
+    return this.request<any>(`/api/notifications/${notificationId}`, { method: 'DELETE' })
+  }
+
+  // Push Subscriptions
+  async subscribeToPush(data: { endpoint: string; keys_p256dh: string; keys_auth: string; expiresAt?: string }) {
+    return this.request<any>('/api/push/subscribe', { method: 'POST', body: data })
+  }
+
+  async unsubscribeFromPush(endpoint: string) {
+    return this.request<any>('/api/push/unsubscribe', { method: 'DELETE', body: { endpoint } })
+  }
+
+  // Stripe
+  async createStripeCheckout(priceId: string) {
+    return this.request<{ sessionId: string; url: string }>('/api/stripe/checkout', {
+      method: 'POST',
+      body: { priceId },
+    })
+  }
+
+  async createStripePortal() {
+    return this.request<{ url: string }>('/api/stripe/portal', { method: 'POST' })
+  }
+
+  async getSubscriptionStatus() {
+    return this.request<{ data: { plan: string; status: string; expiresAt?: string; customerId?: string } }>(
+      '/api/stripe/subscription'
+    )
+  }
+
   // Check auth status
   isAuthenticated(): boolean {
     return !!this.getToken()
