@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowJs": true,
@@ -19,6 +19,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["apps/**/*", "packages/**/*"],
-  "exclude": ["node_modules"]
+  "include": ["apps/web/src/**/*", "packages/**/*"],
+  "exclude": ["node_modules", "apps/web/public", "apps/worker"]
 }

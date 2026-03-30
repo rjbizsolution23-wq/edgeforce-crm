@@ -2393,7 +2393,10 @@ app.get('/api/public/tickets/:ticketNumber', async (c) => {
 
 // List quotes
 app.get('/api/quotes', async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const { status, search } = c.req.query()
 
   try {
@@ -2436,7 +2439,10 @@ app.post('/api/quotes', zValidator('json', z.object({
   validUntil: z.string(),
   notes: z.string().optional()
 })), async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const data = c.req.valid('json')
 
   try {
@@ -2611,7 +2617,10 @@ app.post('/api/quotes/:id/duplicate', async (c) => {
 
 // List invoices
 app.get('/api/invoices', async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const { status, search } = c.req.query()
 
   try {
@@ -2657,7 +2666,10 @@ app.post('/api/invoices', zValidator('json', z.object({
   dueDate: z.string(),
   notes: z.string().optional()
 })), async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const data = c.req.valid('json')
 
   try {
@@ -2826,7 +2838,10 @@ app.post('/api/payments', zValidator('json', z.object({
   invoiceId: z.string(),
   amount: z.number()
 })), async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const { invoiceId, amount } = c.req.valid('json')
 
   try {
@@ -2904,7 +2919,10 @@ app.post('/api/webhooks/stripe', async (c) => {
 app.post('/api/stripe/checkout', zValidator('json', z.object({
   priceId: z.string()
 })), async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const { priceId } = c.req.valid('json')
 
   try {
@@ -2935,7 +2953,10 @@ app.post('/api/stripe/checkout', zValidator('json', z.object({
 
 // Create Stripe customer portal session
 app.post('/api/stripe/portal', async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
 
   try {
     // In production, this would create a real Stripe portal session
@@ -2954,7 +2975,10 @@ app.post('/api/stripe/portal', async (c) => {
 
 // Get subscription status
 app.get('/api/stripe/subscription', async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
 
   try {
     // Get tenant's subscription from database
@@ -2988,7 +3012,10 @@ app.post('/api/stripe/subscription/update', zValidator('json', z.object({
   plan: z.string(),
   expiresAt: z.string().optional()
 })), async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const { subscriptionId, status, plan, expiresAt } = c.req.valid('json')
 
   try {
@@ -3015,13 +3042,15 @@ app.post('/api/stripe/subscription/update', zValidator('json', z.object({
 
 // Get notifications for user
 app.get('/api/notifications', async (c) => {
-  const { tenantId, userId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId, userId } = user
+  const limit = parseInt(c.req.query('limit') || '20')
+  const offset = parseInt(c.req.query('offset') || '0')
+  const unreadOnly = c.req.query('unread') === 'true'
 
   try {
-    const limit = parseInt(c.req.query('limit') || '20')
-    const offset = parseInt(c.req.query('offset') || '0')
-    const unreadOnly = c.req.query('unread') === 'true'
-
     let query = 'SELECT * FROM notifications WHERE user_id = ? AND tenant_id = ?'
     if (unreadOnly) {
       query += ' AND read_at IS NULL'
@@ -3055,7 +3084,10 @@ app.post('/api/notifications', zValidator('json', z.object({
   data: z.record(z.any()).optional(),
   actionUrl: z.string().optional()
 })), async (c) => {
-  const { tenantId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
   const { userId, type, title, message, data, actionUrl } = c.req.valid('json')
 
   try {
@@ -3075,8 +3107,11 @@ app.post('/api/notifications', zValidator('json', z.object({
 
 // Mark notification as read
 app.put('/api/notifications/:id/read', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
   const { id } = c.req.param()
-  const { userId } = c.req.param()
+  const { userId } = user
 
   try {
     await c.env.DB.prepare(`
@@ -3092,7 +3127,10 @@ app.put('/api/notifications/:id/read', async (c) => {
 
 // Mark all notifications as read
 app.post('/api/notifications/read-all', async (c) => {
-  const { tenantId, userId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId, userId } = user
 
   try {
     await c.env.DB.prepare(`
@@ -3108,6 +3146,9 @@ app.post('/api/notifications/read-all', async (c) => {
 
 // Delete notification
 app.delete('/api/notifications/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
   const { id } = c.req.param()
 
   try {
@@ -3130,7 +3171,10 @@ app.post('/api/push/subscribe', zValidator('json', z.object({
   keys_auth: z.string(),
   expiresAt: z.string().optional()
 })), async (c) => {
-  const { tenantId, userId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId, userId } = user
   const { endpoint, keys_p256dh, keys_auth, expiresAt } = c.req.valid('json')
 
   try {
@@ -3152,7 +3196,10 @@ app.post('/api/push/subscribe', zValidator('json', z.object({
 
 // Get push subscriptions for user
 app.get('/api/push/subscriptions', async (c) => {
-  const { userId } = c.req.param()
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { userId } = user
 
   try {
     const subscriptions = await c.env.DB.prepare(
@@ -3170,6 +3217,9 @@ app.get('/api/push/subscriptions', async (c) => {
 app.delete('/api/push/unsubscribe', zValidator('json', z.object({
   endpoint: z.string()
 })), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
   const { endpoint } = c.req.valid('json')
 
   try {

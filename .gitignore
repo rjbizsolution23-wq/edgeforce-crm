@@ -11,3 +11,4 @@ out
 .dev.vars
 .turbo
 coverage
+worker-configuration.d.ts
