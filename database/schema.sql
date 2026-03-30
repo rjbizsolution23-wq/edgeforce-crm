@@ -1093,6 +1093,19 @@ CREATE INDEX idx_workflow_executions_workflow ON workflow_executions(workflow_id
 CREATE INDEX idx_workflow_executions_status ON workflow_executions(status);
 CREATE INDEX idx_workflow_executions_started ON workflow_executions(started_at DESC);
 
+CREATE INDEX idx_quotes_tenant ON quotes(tenant_id);
+CREATE INDEX idx_quotes_status ON quotes(status);
+CREATE INDEX idx_quotes_number ON quotes(number);
+
+CREATE INDEX idx_invoices_tenant ON invoices(tenant_id);
+CREATE INDEX idx_invoices_status ON invoices(status);
+CREATE INDEX idx_invoices_number ON invoices(number);
+CREATE INDEX idx_invoices_quote ON invoices(quote_id);
+
+CREATE INDEX idx_payments_tenant ON payments(tenant_id);
+CREATE INDEX idx_payments_invoice ON payments(invoice_id);
+CREATE INDEX idx_payments_stripe ON payments(stripe_payment_intent_id);
+
 CREATE TABLE IF NOT EXISTS workflow_versions (
   id TEXT PRIMARY KEY,
   workflow_id TEXT NOT NULL,
@@ -1108,6 +1121,85 @@ CREATE TABLE IF NOT EXISTS workflow_versions (
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (workflow_id) REFERENCES automations(id) ON DELETE CASCADE,
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- ============================================================================
+-- QUOTES
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS quotes (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  number TEXT NOT NULL,
+  title TEXT NOT NULL,
+  contact_id TEXT,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_company TEXT,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'sent', 'viewed', 'accepted', 'rejected', 'expired')),
+  value REAL DEFAULT 0,
+  items TEXT DEFAULT '[]', -- JSON array of line items
+  valid_until TEXT,
+  notes TEXT,
+  sent_at TEXT,
+  viewed_at TEXT,
+  accepted_at TEXT,
+  rejected_at TEXT,
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- ============================================================================
+-- INVOICES
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS invoices (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  number TEXT NOT NULL,
+  quote_id TEXT,
+  title TEXT NOT NULL,
+  contact_id TEXT,
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_company TEXT,
+  contact_address TEXT,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'sent', 'paid', 'overdue', 'cancelled', 'refunded')),
+  value REAL DEFAULT 0,
+  items TEXT DEFAULT '[]', -- JSON array of line items
+  issue_date TEXT,
+  due_date TEXT,
+  paid_date TEXT,
+  notes TEXT,
+  sent_at TEXT,
+  created_by TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE SET NULL,
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- ============================================================================
+-- PAYMENTS (for Stripe integration)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS payments (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  invoice_id TEXT,
+  amount REAL NOT NULL,
+  currency TEXT DEFAULT 'USD',
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'failed', 'refunded')),
+  stripe_payment_intent_id TEXT,
+  stripe_charge_id TEXT,
+  payment_method TEXT,
+  paid_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 );
 
 CREATE TRIGGER update_helpdesk_tickets_timestamp AFTER UPDATE ON helpdesk_tickets
@@ -1133,4 +1225,14 @@ END;
 CREATE TRIGGER update_ai_chatbots_timestamp AFTER UPDATE ON ai_chatbots
 BEGIN
   UPDATE ai_chatbots SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_quotes_timestamp AFTER UPDATE ON quotes
+BEGIN
+  UPDATE quotes SET updated_at = datetime('now') WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER update_invoices_timestamp AFTER UPDATE ON invoices
+BEGIN
+  UPDATE invoices SET updated_at = datetime('now') WHERE id = NEW.id;
 END;

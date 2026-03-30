@@ -2388,6 +2388,515 @@ app.get('/api/public/tickets/:ticketNumber', async (c) => {
 })
 
 // ============================================================================
+// QUOTES API
+// ============================================================================
+
+// List quotes
+app.get('/api/quotes', async (c) => {
+  const { tenantId } = c.req.param()
+  const { status, search } = c.req.query()
+
+  try {
+    let query = 'SELECT * FROM quotes WHERE tenant_id = ?'
+    const params: any[] = [tenantId]
+
+    if (status && status !== 'all') {
+      query += ' AND status = ?'
+      params.push(status)
+    }
+
+    if (search) {
+      query += ' AND (title LIKE ? OR contact_name LIKE ? OR number LIKE ?)'
+      const searchPattern = `%${search}%`
+      params.push(searchPattern, searchPattern, searchPattern)
+    }
+
+    query += ' ORDER BY created_at DESC'
+
+    const quotes = await c.env.DB.prepare(query).bind(...params).all()
+    return c.json({ data: quotes.results })
+  } catch (err) {
+    console.error('Get quotes error:', err)
+    return c.json({ error: 'Failed to fetch quotes' }, 500)
+  }
+})
+
+// Create quote
+app.post('/api/quotes', zValidator('json', z.object({
+  title: z.string(),
+  contactId: z.string().optional(),
+  contactName: z.string(),
+  contactEmail: z.string().email().optional(),
+  contactCompany: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number()
+  })),
+  validUntil: z.string(),
+  notes: z.string().optional()
+})), async (c) => {
+  const { tenantId } = c.req.param()
+  const data = c.req.valid('json')
+
+  try {
+    const quoteId = crypto.randomUUID()
+    const number = `QT-${Date.now()}`
+    const value = data.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+
+    await c.env.DB.prepare(`
+      INSERT INTO quotes (id, tenant_id, number, title, contact_id, contact_name, contact_email, contact_company, value, items, valid_until, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      quoteId, tenantId, number, data.title, data.contactId || null,
+      data.contactName, data.contactEmail || null, data.contactCompany || null,
+      value, JSON.stringify(data.items), data.validUntil, data.notes || null
+    ).run()
+
+    return c.json({ data: { id: quoteId, number, value, status: 'draft' } }, 201)
+  } catch (err) {
+    console.error('Create quote error:', err)
+    return c.json({ error: 'Failed to create quote' }, 500)
+  }
+})
+
+// Get quote by ID
+app.get('/api/quotes/:id', async (c) => {
+  const { id } = c.req.param()
+
+  const quote = await c.env.DB.prepare('SELECT * FROM quotes WHERE id = ?').bind(id).first()
+
+  if (!quote) {
+    return c.json({ error: 'Quote not found' }, 404)
+  }
+
+  return c.json({ data: quote })
+})
+
+// Update quote
+app.put('/api/quotes/:id', zValidator('json', z.object({
+  title: z.string().optional(),
+  contactName: z.string().optional(),
+  contactEmail: z.string().email().optional(),
+  contactCompany: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number()
+  })).optional(),
+  validUntil: z.string().optional(),
+  notes: z.string().optional(),
+  status: z.enum(['draft', 'sent', 'viewed', 'accepted', 'rejected', 'expired']).optional()
+})), async (c) => {
+  const { id } = c.req.param()
+  const data = c.req.valid('json')
+
+  try {
+    const existing = await c.env.DB.prepare('SELECT * FROM quotes WHERE id = ?').bind(id).first()
+    if (!existing) {
+      return c.json({ error: 'Quote not found' }, 404)
+    }
+
+    let value = existing.value
+    if (data.items) {
+      value = data.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+    }
+
+    const updates: string[] = []
+    const params: any[] = []
+
+    if (data.title) { updates.push('title = ?'); params.push(data.title) }
+    if (data.contactName) { updates.push('contact_name = ?'); params.push(data.contactName) }
+    if (data.contactEmail) { updates.push('contact_email = ?'); params.push(data.contactEmail) }
+    if (data.contactCompany) { updates.push('contact_company = ?'); params.push(data.contactCompany) }
+    if (data.items) { updates.push('items = ?'); params.push(JSON.stringify(data.items)) }
+    if (data.validUntil) { updates.push('valid_until = ?'); params.push(data.validUntil) }
+    if (data.notes !== undefined) { updates.push('notes = ?'); params.push(data.notes) }
+    if (data.status) {
+      updates.push('status = ?')
+      params.push(data.status)
+      if (data.status === 'sent') {
+        updates.push('sent_at = ?')
+        params.push(new Date().toISOString())
+      } else if (data.status === 'accepted') {
+        updates.push('accepted_at = ?')
+        params.push(new Date().toISOString())
+      } else if (data.status === 'rejected') {
+        updates.push('rejected_at = ?')
+        params.push(new Date().toISOString())
+      }
+    }
+    updates.push('value = ?')
+    params.push(value)
+    updates.push('updated_at = ?')
+    params.push(new Date().toISOString())
+
+    params.push(id)
+
+    await c.env.DB.prepare(`UPDATE quotes SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run()
+
+    return c.json({ data: { id, ...data, value } })
+  } catch (err) {
+    console.error('Update quote error:', err)
+    return c.json({ error: 'Failed to update quote' }, 500)
+  }
+})
+
+// Delete quote
+app.delete('/api/quotes/:id', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    await c.env.DB.prepare('DELETE FROM quotes WHERE id = ?').bind(id).run()
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Delete quote error:', err)
+    return c.json({ error: 'Failed to delete quote' }, 500)
+  }
+})
+
+// Send quote to client
+app.post('/api/quotes/:id/send', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    const quote = await c.env.DB.prepare('SELECT * FROM quotes WHERE id = ?').bind(id).first()
+    if (!quote) {
+      return c.json({ error: 'Quote not found' }, 404)
+    }
+
+    await c.env.DB.prepare(`
+      UPDATE quotes SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?
+    `).bind(new Date().toISOString(), new Date().toISOString(), id).run()
+
+    return c.json({ data: { success: true, message: 'Quote sent to client' } })
+  } catch (err) {
+    console.error('Send quote error:', err)
+    return c.json({ error: 'Failed to send quote' }, 500)
+  }
+})
+
+// Duplicate quote
+app.post('/api/quotes/:id/duplicate', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    const quote = await c.env.DB.prepare('SELECT * FROM quotes WHERE id = ?').bind(id).first()
+    if (!quote) {
+      return c.json({ error: 'Quote not found' }, 404)
+    }
+
+    const newId = crypto.randomUUID()
+    const number = `QT-${Date.now()}`
+
+    await c.env.DB.prepare(`
+      INSERT INTO quotes (id, tenant_id, number, title, contact_id, contact_name, contact_email, contact_company, value, items, valid_until, notes, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+    `).bind(
+      newId, quote.tenant_id, number, quote.title + ' (Copy)',
+      quote.contact_id, quote.contact_name, quote.contact_email, quote.contact_company,
+      quote.value, quote.items, quote.valid_until, quote.notes
+    ).run()
+
+    return c.json({ data: { id: newId, number } }, 201)
+  } catch (err) {
+    console.error('Duplicate quote error:', err)
+    return c.json({ error: 'Failed to duplicate quote' }, 500)
+  }
+})
+
+// ============================================================================
+// INVOICES API
+// ============================================================================
+
+// List invoices
+app.get('/api/invoices', async (c) => {
+  const { tenantId } = c.req.param()
+  const { status, search } = c.req.query()
+
+  try {
+    let query = 'SELECT * FROM invoices WHERE tenant_id = ?'
+    const params: any[] = [tenantId]
+
+    if (status && status !== 'all') {
+      query += ' AND status = ?'
+      params.push(status)
+    }
+
+    if (search) {
+      query += ' AND (title LIKE ? OR contact_name LIKE ? OR number LIKE ?)'
+      const searchPattern = `%${search}%`
+      params.push(searchPattern, searchPattern, searchPattern)
+    }
+
+    query += ' ORDER BY created_at DESC'
+
+    const invoices = await c.env.DB.prepare(query).bind(...params).all()
+    return c.json({ data: invoices.results })
+  } catch (err) {
+    console.error('Get invoices error:', err)
+    return c.json({ error: 'Failed to fetch invoices' }, 500)
+  }
+})
+
+// Create invoice
+app.post('/api/invoices', zValidator('json', z.object({
+  title: z.string(),
+  quoteId: z.string().optional(),
+  contactId: z.string().optional(),
+  contactName: z.string(),
+  contactEmail: z.string().email().optional(),
+  contactCompany: z.string().optional(),
+  contactAddress: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number()
+  })),
+  issueDate: z.string(),
+  dueDate: z.string(),
+  notes: z.string().optional()
+})), async (c) => {
+  const { tenantId } = c.req.param()
+  const data = c.req.valid('json')
+
+  try {
+    const invoiceId = crypto.randomUUID()
+    const number = `INV-${Date.now()}`
+    const value = data.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+
+    await c.env.DB.prepare(`
+      INSERT INTO invoices (id, tenant_id, number, title, quote_id, contact_id, contact_name, contact_email, contact_company, contact_address, value, items, issue_date, due_date, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      invoiceId, tenantId, number, data.title, data.quoteId || null,
+      data.contactId || null, data.contactName, data.contactEmail || null,
+      data.contactCompany || null, data.contactAddress || null,
+      value, JSON.stringify(data.items), data.issueDate, data.dueDate, data.notes || null
+    ).run()
+
+    return c.json({ data: { id: invoiceId, number, value, status: 'draft' } }, 201)
+  } catch (err) {
+    console.error('Create invoice error:', err)
+    return c.json({ error: 'Failed to create invoice' }, 500)
+  }
+})
+
+// Get invoice by ID
+app.get('/api/invoices/:id', async (c) => {
+  const { id } = c.req.param()
+
+  const invoice = await c.env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(id).first()
+
+  if (!invoice) {
+    return c.json({ error: 'Invoice not found' }, 404)
+  }
+
+  return c.json({ data: invoice })
+})
+
+// Update invoice
+app.put('/api/invoices/:id', zValidator('json', z.object({
+  title: z.string().optional(),
+  contactName: z.string().optional(),
+  contactEmail: z.string().email().optional(),
+  contactCompany: z.string().optional(),
+  contactAddress: z.string().optional(),
+  items: z.array(z.object({
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number()
+  })).optional(),
+  issueDate: z.string().optional(),
+  dueDate: z.string().optional(),
+  notes: z.string().optional(),
+  status: z.enum(['draft', 'sent', 'paid', 'overdue', 'cancelled', 'refunded']).optional()
+})), async (c) => {
+  const { id } = c.req.param()
+  const data = c.req.valid('json')
+
+  try {
+    const existing = await c.env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(id).first()
+    if (!existing) {
+      return c.json({ error: 'Invoice not found' }, 404)
+    }
+
+    let value = existing.value
+    if (data.items) {
+      value = data.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+    }
+
+    const updates: string[] = []
+    const params: any[] = []
+
+    if (data.title) { updates.push('title = ?'); params.push(data.title) }
+    if (data.contactName) { updates.push('contact_name = ?'); params.push(data.contactName) }
+    if (data.contactEmail) { updates.push('contact_email = ?'); params.push(data.contactEmail) }
+    if (data.contactCompany) { updates.push('contact_company = ?'); params.push(data.contactCompany) }
+    if (data.contactAddress) { updates.push('contact_address = ?'); params.push(data.contactAddress) }
+    if (data.items) { updates.push('items = ?'); params.push(JSON.stringify(data.items)) }
+    if (data.issueDate) { updates.push('issue_date = ?'); params.push(data.issueDate) }
+    if (data.dueDate) { updates.push('due_date = ?'); params.push(data.dueDate) }
+    if (data.notes !== undefined) { updates.push('notes = ?'); params.push(data.notes) }
+    if (data.status) {
+      updates.push('status = ?')
+      params.push(data.status)
+      if (data.status === 'paid') {
+        updates.push('paid_date = ?')
+        params.push(new Date().toISOString())
+      }
+    }
+    updates.push('value = ?')
+    params.push(value)
+    updates.push('updated_at = ?')
+    params.push(new Date().toISOString())
+
+    params.push(id)
+
+    await c.env.DB.prepare(`UPDATE invoices SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run()
+
+    return c.json({ data: { id, ...data, value } })
+  } catch (err) {
+    console.error('Update invoice error:', err)
+    return c.json({ error: 'Failed to update invoice' }, 500)
+  }
+})
+
+// Delete invoice
+app.delete('/api/invoices/:id', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    await c.env.DB.prepare('DELETE FROM invoices WHERE id = ?').bind(id).run()
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Delete invoice error:', err)
+    return c.json({ error: 'Failed to delete invoice' }, 500)
+  }
+})
+
+// Send invoice to client
+app.post('/api/invoices/:id/send', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    const invoice = await c.env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(id).first()
+    if (!invoice) {
+      return c.json({ error: 'Invoice not found' }, 404)
+    }
+
+    await c.env.DB.prepare(`
+      UPDATE invoices SET status = 'sent', sent_at = ?, updated_at = ? WHERE id = ?
+    `).bind(new Date().toISOString(), new Date().toISOString(), id).run()
+
+    return c.json({ data: { success: true, message: 'Invoice sent to client' } })
+  } catch (err) {
+    console.error('Send invoice error:', err)
+    return c.json({ error: 'Failed to send invoice' }, 500)
+  }
+})
+
+// Mark invoice as paid
+app.post('/api/invoices/:id/paid', async (c) => {
+  const { id } = c.req.param()
+
+  try {
+    const invoice = await c.env.DB.prepare('SELECT * FROM invoices WHERE id = ?').bind(id).first()
+    if (!invoice) {
+      return c.json({ error: 'Invoice not found' }, 404)
+    }
+
+    await c.env.DB.prepare(`
+      UPDATE invoices SET status = 'paid', paid_date = ?, updated_at = ? WHERE id = ?
+    `).bind(new Date().toISOString(), new Date().toISOString(), id).run()
+
+    return c.json({ data: { success: true, message: 'Invoice marked as paid' } })
+  } catch (err) {
+    console.error('Mark invoice paid error:', err)
+    return c.json({ error: 'Failed to mark invoice as paid' }, 500)
+  }
+})
+
+// ============================================================================
+// PAYMENTS API (Stripe)
+// ============================================================================
+
+// Create payment for invoice
+app.post('/api/payments', zValidator('json', z.object({
+  invoiceId: z.string(),
+  amount: z.number()
+})), async (c) => {
+  const { tenantId } = c.req.param()
+  const { invoiceId, amount } = c.req.valid('json')
+
+  try {
+    const paymentId = crypto.randomUUID()
+    const stripePaymentIntentId = `pi_${crypto.randomUUID().slice(2)}`
+
+    await c.env.DB.prepare(`
+      INSERT INTO payments (id, tenant_id, invoice_id, amount, stripe_payment_intent_id, status)
+      VALUES (?, ?, ?, ?, ?, 'pending')
+    `).bind(paymentId, tenantId, invoiceId, amount, stripePaymentIntentId).run()
+
+    return c.json({
+      data: {
+        id: paymentId,
+        clientSecret: `${stripePaymentIntentId}_secret`,
+        amount
+      }
+    }, 201)
+  } catch (err) {
+    console.error('Create payment error:', err)
+    return c.json({ error: 'Failed to create payment' }, 500)
+  }
+})
+
+// Get payments for invoice
+app.get('/api/payments/invoice/:invoiceId', async (c) => {
+  const { invoiceId } = c.req.param()
+
+  const payments = await c.env.DB.prepare(
+    'SELECT * FROM payments WHERE invoice_id = ? ORDER BY created_at DESC'
+  ).bind(invoiceId).all()
+
+  return c.json({ data: payments.results })
+})
+
+// Webhook for Stripe payment events
+app.post('/api/webhooks/stripe', async (c) => {
+  const signature = c.req.header('stripe-signature')
+  const body = await c.req.text()
+
+  try {
+    const event = JSON.parse(body)
+
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object
+
+      await c.env.DB.prepare(`
+        UPDATE payments SET status = 'completed', paid_at = ? WHERE stripe_payment_intent_id = ?
+      `).bind(new Date().toISOString(), paymentIntent.id).run()
+
+      // Update associated invoice
+      const payment = await c.env.DB.prepare(
+        'SELECT * FROM payments WHERE stripe_payment_intent_id = ?'
+      ).bind(paymentIntent.id).first()
+
+      if (payment) {
+        await c.env.DB.prepare(`
+          UPDATE invoices SET status = 'paid', paid_date = ?, updated_at = ? WHERE id = ?
+        `).bind(new Date().toISOString(), new Date().toISOString(), payment.invoice_id).run()
+      }
+    }
+
+    return c.json({ received: true })
+  } catch (err) {
+    console.error('Stripe webhook error:', err)
+    return c.json({ error: 'Webhook processing failed' }, 400)
+  }
+})
+
+// ============================================================================
 // ERROR HANDLING
 // ============================================================================
 
