@@ -1,0 +1,21 @@
+# CODEOWNERS — defines code review requirements
+
+# Global owner — Rick reviews everything
+* @rjbizsolution23-wq
+
+# Frontend
+/apps/web/ @rjbizsolution23-wq
+
+# Backend API
+/apps/worker/ @rjbizsolution23-wq
+
+# Infrastructure & CI/CD
+/infra/ @rjbizsolution23-wq
+/.github/ @rjbizsolution23-wq
+
+# Documentation
+/docs/ @rjbizsolution23-wq
+*.md @rjbizsolution23-wq
+
+# Database
+/database/ @rjbizsolution23-wq
