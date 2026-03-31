@@ -1,0 +1,52 @@
+# FastAPI requirements for EdgeForce AI Worker
+# Install with: pip install -r requirements.txt
+
+# Core
+fastapi==0.135.1
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+pydantic-settings==2.7.1
+
+# Database
+sqlalchemy[asyncio]==2.0.39
+asyncpg==0.30.0
+alembic==1.14.0
+
+# AI & ML
+openai==1.67.1
+huggingface-hub==0.28.1
+anthropic==0.38.0
+google-generativeai==0.8.3
+
+# Agent Frameworks
+crewai==0.80.0
+langchain==0.3.17
+langchain-community==0.3.17
+langchain-openai==0.2.17
+langgraph==0.2.64
+
+# Vector Store
+pgvector==0.3.0
+
+# Email
+aiosmtplib==3.0.1
+email-validator==2.2.0
+
+# Task Queue
+celery==5.4.0
+redis==5.2.1
+
+# Logging & Monitoring
+structlog==25.1.0
+sentry-sdk==2.22.0
+
+# Utilities
+python-dotenv==1.0.1
+httpx==0.28.1
+tenacity==9.0.0
+tiktoken==0.8.0
+
+# Dev
+pytest==8.3.4
+pytest-asyncio==0.24.0
+ruff==0.9.4

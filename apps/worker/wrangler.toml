@@ -8,6 +8,11 @@ enabled = true
 [vars]
 ENV = "production"
 
+# Durable Objects for WebSocket
+[[durable_objects.bindings]]
+name = "WEBSOCKET"
+class_name = "WebSocketServer"
+
 # D1 Database binding
 [[d1_databases]]
 binding = "DB"

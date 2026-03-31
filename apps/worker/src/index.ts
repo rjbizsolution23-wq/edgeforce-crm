@@ -516,6 +516,92 @@ app.patch('/api/deals/:id/stage', zValidator('json', z.object({
   return c.json({ data: updated })
 })
 
+// Get deal by ID
+app.get('/api/deals/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { id } = c.req.param()
+
+  const deal = await c.env.DB.prepare(`
+    SELECT d.*, c.first_name as contact_first_name, c.last_name as contact_last_name,
+           p.name as pipeline_name
+    FROM deals d
+    LEFT JOIN contacts c ON d.contact_id = c.id
+    LEFT JOIN pipelines p ON d.pipeline_id = p.id
+    WHERE d.id = ? AND d.tenant_id = ?
+  `).bind(id, user.tenantId).first()
+
+  if (!deal) return c.json({ error: 'Deal not found' }, 404)
+
+  return c.json({ data: deal })
+})
+
+// Update deal
+app.patch('/api/deals/:id', zValidator('json', z.object({
+  name: z.string().optional(),
+  pipelineId: z.string().optional(),
+  stage: z.string().optional(),
+  contactId: z.string().optional(),
+  value: z.number().optional(),
+  expectedCloseDate: z.string().optional(),
+  probability: z.number().optional(),
+  notes: z.string().optional(),
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { id } = c.req.param()
+  const data = c.req.valid('json')
+
+  const deal = await c.env.DB.prepare(
+    'SELECT * FROM deals WHERE id = ? AND tenant_id = ?'
+  ).bind(id, user.tenantId).first() as any
+
+  if (!deal) return c.json({ error: 'Deal not found' }, 404)
+
+  // Build update query
+  const updates: string[] = []
+  const bindings: any[] = []
+
+  if (data.name !== undefined) { updates.push('name = ?'); bindings.push(data.name) }
+  if (data.pipelineId !== undefined) { updates.push('pipeline_id = ?'); bindings.push(data.pipelineId) }
+  if (data.stage !== undefined) { updates.push('stage = ?'); bindings.push(data.stage) }
+  if (data.contactId !== undefined) { updates.push('contact_id = ?'); bindings.push(data.contactId) }
+  if (data.value !== undefined) { updates.push('value = ?'); bindings.push(data.value) }
+  if (data.expectedCloseDate !== undefined) { updates.push('expected_close_date = ?'); bindings.push(data.expectedCloseDate) }
+  if (data.probability !== undefined) { updates.push('probability = ?'); bindings.push(data.probability) }
+  if (data.notes !== undefined) { updates.push('notes = ?'); bindings.push(data.notes) }
+
+  if (updates.length > 0) {
+    bindings.push(id, user.tenantId)
+    await c.env.DB.prepare(`
+      UPDATE deals SET ${updates.join(', ')} WHERE id = ? AND tenant_id = ?
+    `).bind(...bindings).run()
+  }
+
+  const updated = await c.env.DB.prepare('SELECT * FROM deals WHERE id = ?').bind(id).first()
+  return c.json({ data: updated })
+})
+
+// Delete deal
+app.delete('/api/deals/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { id } = c.req.param()
+
+  const deal = await c.env.DB.prepare(
+    'SELECT * FROM deals WHERE id = ? AND tenant_id = ?'
+  ).bind(id, user.tenantId).first()
+
+  if (!deal) return c.json({ error: 'Deal not found' }, 404)
+
+  await c.env.DB.prepare('DELETE FROM deals WHERE id = ?').bind(id).run()
+
+  return c.json({ data: { success: true } })
+})
+
 // ============================================================================
 // TASKS
 // ============================================================================
@@ -3229,6 +3315,459 @@ app.delete('/api/push/unsubscribe', zValidator('json', z.object({
     console.error('Unsubscribe error:', err)
     return c.json({ error: 'Failed to unsubscribe' }, 500)
   }
+})
+
+// ============================================================================
+// WEBSOCKET REAL-TIME API
+// ============================================================================
+
+// WebSocket endpoint upgrade
+app.get('/ws', async (c) => {
+  // This would be handled by the Worker with WebSocket support
+  // The Durable Object handles the actual WebSocket connections
+  return c.json({
+    message: 'WebSocket endpoint - connect via ws://host/ws?tenantId=xxx&userId=xxx',
+    durableObject: 'WebSocketServer'
+  })
+})
+
+// Send real-time message to tenant
+app.post('/api/ws/send', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+  const { message, excludeConnectionId } = await c.req.json().catch(() => ({}))
+
+  try {
+    // Get the Durable Object stub
+    const id = c.env.WEBSOCKET.idFromName('websocket-' + tenantId)
+    const stub = c.env.WEBSOCKET.get(id)
+
+    // Send to DO
+    const response = await stub.fetch('/api/ws/send', {
+      method: 'POST',
+      body: JSON.stringify({ tenantId, message, excludeConnectionId })
+    })
+
+    return c.json({ success: true })
+  } catch (err) {
+    console.error('WebSocket send error:', err)
+    return c.json({ error: 'Failed to send message' }, 500)
+  }
+})
+
+// Send notification to specific user via WebSocket
+app.post('/api/ws/notify', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId, userId, notification } = await c.req.json().catch(() => ({}))
+
+  if (!userId || !notification) {
+    return c.json({ error: 'Missing userId or notification' }, 400)
+  }
+
+  try {
+    const id = c.env.WEBSOCKET.idFromName('websocket-' + tenantId)
+    const stub = c.env.WEBSOCKET.get(id)
+
+    await stub.fetch('/api/ws/notify', {
+      method: 'POST',
+      body: JSON.stringify({ tenantId, userId, notification })
+    })
+
+    return c.json({ success: true })
+  } catch (err) {
+    console.error('WebSocket notify error:', err)
+    return c.json({ error: 'Failed to send notification' }, 500)
+  }
+})
+
+// Get connection count for tenant
+app.get('/api/ws/connections', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+
+  try {
+    const id = c.env.WEBSOCKET.idFromName('websocket-' + tenantId)
+    const stub = c.env.WEBSOCKET.get(id)
+
+    const response = await stub.fetch('/api/ws/connections/' + tenantId)
+    const data = await response.json()
+
+    return c.json(data)
+  } catch (err) {
+    console.error('WebSocket connections error:', err)
+    return c.json({ count: 0 })
+  }
+})
+
+// ============================================================================
+// DOCUMENT UPLOAD API (R2)
+// ============================================================================
+
+// Upload document to R2
+app.post('/api/documents/upload', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+  const contentType = c.req.header('content-type') || 'application/octet-stream'
+  const fileName = c.req.header('x-filename') || 'document'
+
+  try {
+    const arrayBuffer = await c.req.arrayBuffer()
+    const key = `${tenantId}/documents/${crypto.randomUUID()}-${fileName}`
+
+    await c.env.ASSETS.put(key, arrayBuffer, {
+      httpMetadata: {
+        contentType
+      }
+    })
+
+    const documentId = crypto.randomUUID()
+
+    // Store metadata in database
+    await c.env.DB.prepare(`
+      INSERT INTO documents (id, tenant_id, user_id, filename, content_type, size, storage_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(documentId, tenantId, user.userId, fileName, contentType, arrayBuffer.byteLength, key).run()
+
+    return c.json({
+      data: {
+        id: documentId,
+        filename: fileName,
+        contentType,
+        size: arrayBuffer.byteLength,
+        url: `/api/documents/${documentId}`
+      }
+    }, 201)
+  } catch (err) {
+    console.error('Document upload error:', err)
+    return c.json({ error: 'Failed to upload document' }, 500)
+  }
+})
+
+// Get document metadata
+app.get('/api/documents/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+  const { id } = c.req.param()
+
+  try {
+    const doc = await c.env.DB.prepare(`
+      SELECT id, tenant_id, filename, content_type, size, created_at
+      FROM documents WHERE id = ? AND tenant_id = ?
+    `).bind(id, tenantId).first()
+
+    if (!doc) {
+      return c.json({ error: 'Document not found' }, 404)
+    }
+
+    return c.json({ data: doc })
+  } catch (err) {
+    console.error('Get document error:', err)
+    return c.json({ error: 'Failed to get document' }, 500)
+  }
+})
+
+// Download document
+app.get('/api/documents/:id/download', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+  const { id } = c.req.param()
+
+  try {
+    const doc = await c.env.DB.prepare(`
+      SELECT filename, content_type, storage_key FROM documents WHERE id = ? AND tenant_id = ?
+    `).bind(id, tenantId).first() as any
+
+    if (!doc) {
+      return c.json({ error: 'Document not found' }, 404)
+    }
+
+    const object = await c.env.ASSETS.get(doc.storage_key)
+
+    if (!object) {
+      return c.json({ error: 'File not found in storage' }, 404)
+    }
+
+    return new Response(object.body, {
+      headers: {
+        'Content-Type': doc.content_type,
+        'Content-Disposition': `attachment; filename="${doc.filename}"`
+      }
+    })
+  } catch (err) {
+    console.error('Download document error:', err)
+    return c.json({ error: 'Failed to download document' }, 500)
+  }
+})
+
+// Delete document
+app.delete('/api/documents/:id', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+  const { id } = c.req.param()
+
+  try {
+    const doc = await c.env.DB.prepare(`
+      SELECT storage_key FROM documents WHERE id = ? AND tenant_id = ?
+    `).bind(id, tenantId).first() as any
+
+    if (!doc) {
+      return c.json({ error: 'Document not found' }, 404)
+    }
+
+    // Delete from R2
+    await c.env.ASSETS.delete(doc.storage_key)
+
+    // Delete from database
+    await c.env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(id).run()
+
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Delete document error:', err)
+    return c.json({ error: 'Failed to delete document' }, 500)
+  }
+})
+
+// List documents
+app.get('/api/documents', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { tenantId } = user
+  const limit = parseInt(c.req.query('limit') || '50')
+  const offset = parseInt(c.req.query('offset') || '0')
+
+  try {
+    const docs = await c.env.DB.prepare(`
+      SELECT id, filename, content_type, size, created_at
+      FROM documents WHERE tenant_id = ?
+      ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).bind(tenantId, limit, offset).all()
+
+    return c.json({ data: docs.results })
+  } catch (err) {
+    console.error('List documents error:', err)
+    return c.json({ error: 'Failed to list documents' }, 500)
+  }
+})
+
+// ============================================================================
+// LLM INTEGRATIONS API (OpenRouter + HuggingFace)
+// ============================================================================
+
+// Import LLM clients
+import { createOpenRouterClient, getFreeModel, selectModel, OPENROUTER_MODELS } from './llm/openrouter'
+import { createHuggingFaceClient, selectHuggingFaceModel, HUGGINGFACE_MODELS } from './llm/huggingface'
+import { createSuperOrchestrator } from './agents/orchestrator'
+
+// Get available models
+app.get('/api/llm/models', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  return c.json({
+    providers: {
+      openrouter: OPENROUTER_MODELS,
+      huggingface: HUGGINGFACE_MODELS,
+      cloudflare: {
+        '@cf/meta/llama-3.1-8b-instruct': { name: 'Llama 3.1 8B', context: 128000 },
+        '@cf/meta/llama-3.1-70b-instruct': { name: 'Llama 3.1 70B', context: 128000 },
+        '@cf/meta/llama-3.1-8b-instruct': { name: 'Llama 3.1 8B', context: 128000 }
+      }
+    }
+  })
+})
+
+// Chat completion with configurable LLM
+app.post('/api/llm/chat', zValidator('json', z.object({
+  model: z.string(),
+  messages: z.array(z.object({
+    role: z.enum(['system', 'user', 'assistant']),
+    content: z.string()
+  })),
+  temperature: z.number().min(0).max(2).default(0.7),
+  maxTokens: z.number().max(4000).default(2000)
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { model, messages, temperature, maxTokens } = c.req.valid('json')
+
+  try {
+    // Route to appropriate provider
+    if (model.startsWith('meta-llama') || model.startsWith('mistralai') || model.startsWith('qwen') || model.startsWith('google/')) {
+      // Use OpenRouter (placeholder - would need API key)
+      const client = createOpenRouterClient('')
+      const response = await client.chat({ model, messages, temperature, max_tokens: maxTokens })
+      return c.json({ data: response })
+    } else if (model.startsWith('sentence-transformers') || model.startsWith('microsoft/') || model.startsWith('facebook/')) {
+      // Use HuggingFace (placeholder - would need token)
+      const client = createHuggingFaceClient('')
+      const embedding = await client.embeddings(model, messages[messages.length - 1]?.content || '')
+      return c.json({ data: { embedding } })
+    } else {
+      // Use Cloudflare Workers AI
+      const response = await c.env.AI.run(model, {
+        messages,
+        temperature,
+        max_tokens: maxTokens
+      })
+      return c.json({ data: { response: (response as any).response } })
+    }
+  } catch (err) {
+    console.error('LLM chat error:', err)
+    return c.json({ error: 'LLM request failed' }, 500)
+  }
+})
+
+// Get embeddings
+app.post('/api/llm/embeddings', zValidator('json', z.object({
+  model: z.string().default('sentence-transformers/all-MiniLM-L6-v2'),
+  input: z.union([z.string(), z.array(z.string())])
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { model, input } = c.req.valid('json')
+
+  try {
+    // Use HuggingFace for embeddings
+    const client = createHuggingFaceClient('')
+    const text = Array.isArray(input) ? input[0] : input
+    const embedding = await client.embeddings(model, text)
+
+    return c.json({ data: { embedding, model } })
+  } catch (err) {
+    console.error('Embeddings error:', err)
+    return c.json({ error: 'Embedding generation failed' }, 500)
+  }
+})
+
+// ============================================================================
+// SUPER ORCHESTRATOR AGENT API
+// ============================================================================
+
+// Execute agent task
+app.post('/api/agents/execute', zValidator('json', z.object({
+  task: z.string(),
+  context: z.record(z.any()).optional(),
+  agentType: z.enum(['orchestrator', 'research', 'planning', 'execution', 'review', 'optimization']).default('orchestrator'),
+  model: z.string().optional()
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { task, context, agentType, model } = c.req.valid('json')
+
+  try {
+    const orchestrator = createSuperOrchestrator(c.env as any)
+    const result = await orchestrator.execute(task, context || {})
+
+    return c.json({
+      data: {
+        taskId: result.id,
+        status: result.status,
+        result: result.result,
+        metadata: result.metadata
+      }
+    })
+  } catch (err) {
+    console.error('Agent execution error:', err)
+    return c.json({ error: 'Agent execution failed' }, 500)
+  }
+})
+
+// Get agent metrics
+app.get('/api/agents/metrics', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const orchestrator = createSuperOrchestrator(c.env as any)
+  const metrics = orchestrator.getMetrics()
+  const health = orchestrator.getHealthStatus()
+
+  return c.json({
+    data: {
+      metrics,
+      health,
+      totalTasks: Object.values(metrics).reduce((sum, m) => sum + m.totalTasks, 0),
+      successRate: Object.values(metrics).reduce((sum, m) => sum + m.successRate, 0) / Object.keys(metrics).length
+    }
+  })
+})
+
+// Submit agent feedback for self-improvement
+app.post('/api/agents/feedback', zValidator('json', z.object({
+  taskId: z.string(),
+  agentType: z.enum(['orchestrator', 'research', 'planning', 'execution', 'review', 'optimization']),
+  rating: z.number().min(1).max(5),
+  feedback: z.string(),
+  improvements: z.array(z.string()).optional()
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { taskId, agentType, rating, feedback, improvements } = c.req.valid('json')
+
+  try {
+    const orchestrator = createSuperOrchestrator(c.env as any)
+    await orchestrator.submitFeedback(taskId, agentType, rating, feedback, improvements)
+
+    return c.json({ data: { success: true } })
+  } catch (err) {
+    console.error('Feedback submission error:', err)
+    return c.json({ error: 'Failed to submit feedback' }, 500)
+  }
+})
+
+// Trigger self-improvement cycle
+app.post('/api/agents/improve', zValidator('json', z.object({
+  agentType: z.enum(['orchestrator', 'research', 'planning', 'execution', 'review', 'optimization']).optional()
+})), async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const { agentType } = c.req.valid('json')
+
+  try {
+    const orchestrator = createSuperOrchestrator(c.env as any)
+    const result = await orchestrator.triggerSelfImprovement(agentType)
+
+    return c.json({ data: result })
+  } catch (err) {
+    console.error('Self-improvement error:', err)
+    return c.json({ error: 'Self-improvement failed' }, 500)
+  }
+})
+
+// Get agent status
+app.get('/api/agents/status', async (c) => {
+  const user = await verifyToken(c)
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  const orchestrator = createSuperOrchestrator(c.env as any)
+  const health = orchestrator.getHealthStatus()
+
+  return c.json({
+    data: {
+      healthy: health.healthy,
+      issues: health.issues,
+      timestamp: new Date().toISOString()
+    }
+  })
 })
 
 // ============================================================================

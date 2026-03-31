@@ -1278,6 +1278,22 @@ BEGIN
   UPDATE quotes SET updated_at = datetime('now') WHERE id = NEW.id;
 END;
 
+-- Documents table for file uploads
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  storage_key TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_documents_tenant ON documents(tenant_id, created_at DESC);
+
 CREATE TRIGGER update_invoices_timestamp AFTER UPDATE ON invoices
 BEGIN
   UPDATE invoices SET updated_at = datetime('now') WHERE id = NEW.id;
