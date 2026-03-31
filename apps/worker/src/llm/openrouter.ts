@@ -10,11 +10,11 @@ interface Env {
   DB: D1Database
   AI: Ai
   KV: KVNamespace
+  OPENROUTER_API_KEY?: string
 }
 
 // OpenRouter API configuration
 const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1'
-const OPENROUTER_API_KEY = 'YOUR_OPENROUTER_API_KEY' // Set via wrangler secret
 
 // Model pricing (free models marked)
 export const OPENROUTER_MODELS = {
@@ -211,9 +211,13 @@ export class OpenRouterClient {
   }
 }
 
-// Factory function to create client
-export function createOpenRouterClient(apiKey: string): OpenRouterClient {
-  return new OpenRouterClient(apiKey)
+// Factory function to create client from env
+export function createOpenRouterClient(env: Env): OpenRouterClient | null {
+  if (!env.OPENROUTER_API_KEY) {
+    console.warn('OPENROUTER_API_KEY not configured')
+    return null
+  }
+  return new OpenRouterClient(env.OPENROUTER_API_KEY)
 }
 
 // Helper to get best free model

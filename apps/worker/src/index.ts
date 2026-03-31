@@ -3609,13 +3609,15 @@ app.post('/api/llm/chat', zValidator('json', z.object({
   try {
     // Route to appropriate provider
     if (model.startsWith('meta-llama') || model.startsWith('mistralai') || model.startsWith('qwen') || model.startsWith('google/')) {
-      // Use OpenRouter (placeholder - would need API key)
-      const client = createOpenRouterClient('')
+      // Use OpenRouter
+      const client = createOpenRouterClient(c.env)
+      if (!client) return c.json({ error: 'OpenRouter not configured' }, 503)
       const response = await client.chat({ model, messages, temperature, max_tokens: maxTokens })
       return c.json({ data: response })
     } else if (model.startsWith('sentence-transformers') || model.startsWith('microsoft/') || model.startsWith('facebook/')) {
-      // Use HuggingFace (placeholder - would need token)
-      const client = createHuggingFaceClient('')
+      // Use HuggingFace
+      const client = createHuggingFaceClient(c.env)
+      if (!client) return c.json({ error: 'HuggingFace not configured' }, 503)
       const embedding = await client.embeddings(model, messages[messages.length - 1]?.content || '')
       return c.json({ data: { embedding } })
     } else {
@@ -3645,7 +3647,8 @@ app.post('/api/llm/embeddings', zValidator('json', z.object({
 
   try {
     // Use HuggingFace for embeddings
-    const client = createHuggingFaceClient('')
+    const client = createHuggingFaceClient(c.env)
+    if (!client) return c.json({ error: 'HuggingFace not configured' }, 503)
     const text = Array.isArray(input) ? input[0] : input
     const embedding = await client.embeddings(model, text)
 

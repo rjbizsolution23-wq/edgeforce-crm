@@ -8,6 +8,11 @@ enabled = true
 [vars]
 ENV = "production"
 
+# Durable Objects migrations
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = [ "WebSocketServer" ]
+
 # Durable Objects for WebSocket
 [[durable_objects.bindings]]
 name = "WEBSOCKET"

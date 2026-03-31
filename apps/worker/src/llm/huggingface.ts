@@ -8,11 +8,11 @@ interface Env {
   DB: D1Database
   AI: Ai
   KV: KVNamespace
+  HUGGINGFACE_TOKEN?: string
 }
 
 // HuggingFace Inference API configuration
 const HUGGINGFACE_API_BASE = 'https://api-inference.huggingface.co/models'
-const HUGGINGFACE_TOKEN = 'YOUR_HUGGINGFACE_TOKEN' // Set via wranger secret
 
 // Popular free models on HuggingFace
 export const HUGGINGFACE_MODELS = {
@@ -219,9 +219,13 @@ export class HuggingFaceClient {
   }
 }
 
-// Factory function
-export function createHuggingFaceClient(token: string): HuggingFaceClient {
-  return new HuggingFaceClient(token)
+// Factory function to create client from env
+export function createHuggingFaceClient(env: Env): HuggingFaceClient | null {
+  if (!env.HUGGINGFACE_TOKEN) {
+    console.warn('HUGGINGFACE_TOKEN not configured')
+    return null
+  }
+  return new HuggingFaceClient(env.HUGGINGFACE_TOKEN)
 }
 
 // Helper to select best model for task
