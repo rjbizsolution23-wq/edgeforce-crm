@@ -38,20 +38,7 @@ export default function ContactsPage() {
 
   const contacts = contactsData || []
 
-  // Demo fallback data
-  const demoContacts = [
-    { id: '1', first_name: 'John', last_name: 'Smith', email: 'john@techstart.io', company: 'TechStart Inc', phone: '+1 555-0123', lead_score: 85, status: 'qualified' },
-    { id: '2', first_name: 'Sarah', last_name: 'Chen', email: 'sarah@dataflow.com', company: 'DataFlow Systems', phone: '+1 555-0124', lead_score: 72, status: 'contacted' },
-    { id: '3', first_name: 'Mike', last_name: 'Johnson', email: 'mike@cloudfirst.io', company: 'CloudFirst LLC', phone: '+1 555-0125', lead_score: 91, status: 'new' },
-    { id: '4', first_name: 'Emily', last_name: 'Davis', email: 'emily@innovatetech.com', company: 'InnovateTech', phone: '+1 555-0126', lead_score: 65, status: 'qualified' },
-    { id: '5', first_name: 'Alex', last_name: 'Brown', email: 'alex@nextgen.io', company: 'NextGen Solutions', phone: '+1 555-0127', lead_score: 58, status: 'contacted' },
-    { id: '6', first_name: 'Lisa', last_name: 'Wilson', email: 'lisa@digitalboost.co', company: 'DigitalBoost', phone: '+1 555-0128', lead_score: 78, status: 'new' },
-    { id: '7', first_name: 'Tom', last_name: 'Harris', email: 'tom@acme.com', company: 'Acme Corp', phone: '+1 555-0129', lead_score: 95, status: 'converted' },
-  ]
-
-  const displayContacts = contacts.length > 0 ? contacts : demoContacts
-
-  const filteredContacts = displayContacts.filter((c: any) => {
+  const filteredContacts = contacts.filter((c: any) => {
     const firstName = c.first_name || c.firstName || ''
     const lastName = c.last_name || c.lastName || ''
     const email = c.email || ''

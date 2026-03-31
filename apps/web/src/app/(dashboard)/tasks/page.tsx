@@ -6,15 +6,6 @@ import { clsx } from 'clsx'
 import { api } from '@/lib/api'
 import CreateTaskModal from '@/components/modals/CreateTaskModal'
 
-const demoTasks = [
-  { id: '1', title: 'Call Johnson about proposal', type: 'call', priority: 'high', status: 'pending', dueDate: '2026-03-29', assignedTo: 'Rick Jefferson' },
-  { id: '2', title: 'Send follow-up email to Acme', type: 'email', priority: 'medium', status: 'pending', dueDate: '2026-03-29', assignedTo: 'Sarah Chen' },
-  { id: '3', title: 'Review Q2 pipeline', type: 'task', priority: 'low', status: 'pending', dueDate: '2026-03-30', assignedTo: 'Rick Jefferson' },
-  { id: '4', title: 'Team meeting', type: 'meeting', priority: 'medium', status: 'pending', dueDate: '2026-03-29', assignedTo: 'All Team' },
-  { id: '5', title: 'Demo with TechStart Inc', type: 'demo', priority: 'high', status: 'completed', dueDate: '2026-03-28', assignedTo: 'Mike Johnson' },
-  { id: '6', title: 'Prepare quarterly report', type: 'task', priority: 'high', status: 'in_progress', dueDate: '2026-03-31', assignedTo: 'Rick Jefferson' },
-]
-
 const typeIcons: Record<string, any> = {
   call: Phone,
   email: Mail,
@@ -91,8 +82,8 @@ export default function TasksPage() {
     }
   })
 
-  // Convert API tasks to demo format
-  const apiTasks = (tasksData || []).map((t: any) => ({
+  // Convert API tasks to display format
+  const tasks = (tasksData || []).map((t: any) => ({
     id: t.id,
     title: t.title,
     type: t.type || 'task',
@@ -101,8 +92,6 @@ export default function TasksPage() {
     dueDate: t.due_date || t.dueDate,
     assignedTo: t.assigned_to_name || t.assignedTo || ''
   }))
-
-  const tasks = tasksData?.length ? apiTasks : demoTasks
 
   const filteredTasks = tasks.filter((t: any) => {
     if (filter === 'all') return true

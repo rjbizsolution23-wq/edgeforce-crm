@@ -27,26 +27,18 @@ const stages = [
   { id: 'Lost', name: 'Lost', color: '#ef4444' },
 ]
 
-const demoDeals: DealsByStage = {
-  New: [
-    { id: '1', name: 'TechStart Inc', value: 25000, contact: 'John Smith', probability: 20 },
-    { id: '2', name: 'DataFlow Systems', value: 45000, contact: 'Sarah Chen', probability: 15 },
-  ],
-  Qualified: [
-    { id: '3', name: 'CloudFirst LLC', value: 80000, contact: 'Mike Johnson', probability: 40 },
-  ],
-  Proposal: [
-    { id: '4', name: 'InnovateTech', value: 120000, contact: 'Emily Davis', probability: 60 },
-    { id: '5', name: 'NextGen Solutions', value: 55000, contact: 'Alex Brown', probability: 50 },
-  ],
-  Negotiation: [
-    { id: '6', name: 'DigitalBoost', value: 95000, contact: 'Lisa Wilson', probability: 75 },
-  ],
-  Won: [
-    { id: '7', name: 'Acme Corp', value: 45000, contact: 'Tom Harris', probability: 100 },
-  ],
-  Lost: [],
+interface DealsByStage {
+  [key: string]: Deal[]
 }
+
+const stages = [
+  { id: 'New', name: 'New', color: '#6366f1' },
+  { id: 'Qualified', name: 'Qualified', color: '#8b5cf6' },
+  { id: 'Proposal', name: 'Proposal', color: '#a855f7' },
+  { id: 'Negotiation', name: 'Negotiation', color: '#d946ef' },
+  { id: 'Won', name: 'Won', color: '#22c55e' },
+  { id: 'Lost', name: 'Lost', color: '#ef4444' },
+]
 
 export default function DealsPage() {
   const [showModal, setShowModal] = useState(false)
@@ -61,23 +53,24 @@ export default function DealsPage() {
   })
 
   // Convert API deals to stage-based structure
-  const apiDeals: DealsByStage = { ...demoDeals }
+  const dealsByStage: DealsByStage = { New: [], Qualified: [], Proposal: [], Negotiation: [], Won: [], Lost: [] }
+
   if (dealsData?.length) {
-    stages.forEach(s => apiDeals[s.id] = [])
     dealsData.forEach((d: any) => {
       const stage = d.stage || 'New'
-      if (!apiDeals[stage]) apiDeals[stage] = []
-      apiDeals[stage].push({
-        id: d.id,
-        name: d.name,
-        value: d.value || 0,
-        contact: d.contact_name || d.contact_id || 'Unknown',
-        probability: d.probability || 0
-      })
+      if (dealsByStage[stage]) {
+        dealsByStage[stage].push({
+          id: d.id,
+          name: d.name,
+          value: d.value || 0,
+          contact: d.contact_name || d.contact_id || 'Unknown',
+          probability: d.probability || 0
+        })
+      }
     })
   }
 
-  const deals = dealsData?.length ? apiDeals : demoDeals
+  const deals = dealsByStage
 
   return (
     <div className="space-y-6">

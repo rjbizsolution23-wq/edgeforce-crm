@@ -1,11 +1,13 @@
 'use client'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Plus, MoreHorizontal, GripVertical, DollarSign,
   Users, Clock, CheckCircle, XCircle, ChevronDown, Filter,
   Search, Edit2, Trash2, Eye, ArrowUpRight, MoreVertical
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { api } from '@/lib/api'
 
 interface Deal {
   id: string
@@ -19,19 +21,6 @@ interface Deal {
   avatar?: string
 }
 
-const initialDeals: Deal[] = [
-  { id: '1', name: 'Enterprise License', company: 'Acme Corp', value: 75000, stage: 'lead', probability: 10, closeDate: '2026-04-15', owner: 'Rick' },
-  { id: '2', name: 'SaaS Subscription', company: 'TechStart', value: 24000, stage: 'lead', probability: 20, closeDate: '2026-04-20', owner: 'Sarah' },
-  { id: '3', name: 'Consulting Package', company: 'BuildIt Inc', value: 45000, stage: 'qualified', probability: 40, closeDate: '2026-04-10', owner: 'Rick' },
-  { id: '4', name: 'Annual Contract', company: 'DataFlow', value: 120000, stage: 'qualified', probability: 50, closeDate: '2026-04-25', owner: 'Mike' },
-  { id: '5', name: 'Platform Migration', company: 'CloudNet', value: 95000, stage: 'proposal', probability: 60, closeDate: '2026-04-05', owner: 'Sarah' },
-  { id: '6', name: 'Integration Services', company: 'AppWorks', value: 35000, stage: 'proposal', probability: 70, closeDate: '2026-04-12', owner: 'Rick' },
-  { id: '7', name: 'Support Plan', company: 'SecureSys', value: 28000, stage: 'negotiation', probability: 80, closeDate: '2026-04-08', owner: 'Mike' },
-  { id: '8', name: 'Full Suite License', company: 'MegaCorp', value: 250000, stage: 'negotiation', probability: 90, closeDate: '2026-04-01', owner: 'Rick' },
-  { id: '9', name: 'Maintenance Contract', company: 'LocalBiz', value: 12000, stage: 'closed_won', probability: 100, closeDate: '2026-03-28', owner: 'Sarah' },
-  { id: '10', name: 'Starter Package', company: 'NewCo', value: 8000, stage: 'closed_lost', probability: 0, closeDate: '2026-03-25', owner: 'Rick' },
-]
-
 const stages = [
   { id: 'lead', label: 'Lead', color: 'bg-slate-500' },
   { id: 'qualified', label: 'Qualified', color: 'bg-blue-500' },
@@ -42,7 +31,26 @@ const stages = [
 ]
 
 export default function PipelinePage() {
-  const [deals, setDeals] = useState<Deal[]>(initialDeals)
+  const { data: dealsData } = useQuery({
+    queryKey: ['deals'],
+    queryFn: async () => {
+      const result = await api.getDeals()
+      return result.data || []
+    }
+  })
+
+  // Convert API data to Deal format
+  const deals: Deal[] = (dealsData || []).map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    company: d.company || d.contact_name || 'Unknown',
+    value: d.value || 0,
+    stage: d.stage?.toLowerCase() || 'lead',
+    probability: d.probability || 0,
+    closeDate: d.expected_close_date || d.close_date || '',
+    owner: d.assigned_to_name || 'Unassigned',
+  }))
+
   const [draggedDeal, setDraggedDeal] = useState<Deal | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board')

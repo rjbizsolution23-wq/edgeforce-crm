@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Plus, Search, MoreHorizontal, FileText, Send, Copy, Download,
   Eye, Edit2, Trash2, Check, X, Clock, DollarSign, Receipt,
@@ -7,6 +8,7 @@ import {
   CreditCard, Banknote, AlertCircle
 } from 'lucide-react'
 import { clsx } from 'clsx'
+import { api } from '@/lib/api'
 
 interface LineItem {
   id: string
@@ -140,7 +142,32 @@ const statusIcon = {
 }
 
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>(demoInvoices)
+  const { data: invoicesData } = useQuery({
+    queryKey: ['invoices'],
+    queryFn: async () => {
+      const result = await api.getInvoices()
+      return result.data || []
+    }
+  })
+
+  // Convert API data to Invoice format
+  const invoices: Invoice[] = (invoicesData || []).map((inv: any) => ({
+    id: inv.id,
+    number: inv.invoice_number || `INV-${inv.id.slice(0, 6)}`,
+    quoteId: inv.quote_id,
+    title: inv.title || 'Invoice',
+    client: inv.client_name || 'Unknown',
+    clientEmail: inv.client_email || '',
+    clientCompany: inv.client_company || '',
+    clientAddress: inv.client_address || '',
+    value: inv.total || inv.amount || 0,
+    status: inv.status || 'pending',
+    items: [],
+    issueDate: inv.issue_date || inv.created_at?.split('T')[0] || '',
+    dueDate: inv.due_date || '',
+    paidDate: inv.paid_at,
+  }))
+
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
