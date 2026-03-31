@@ -217,6 +217,17 @@ class ApiClient {
     return this.request<any[]>(`/api/tasks${queryString ? `?${queryString}` : ''}`)
   }
 
+  // Activities
+  async getActivities(params?: { contactId?: string; dealId?: string; limit?: number }) {
+    const query = new URLSearchParams()
+    if (params?.contactId) query.set('contactId', params.contactId)
+    if (params?.dealId) query.set('dealId', params.dealId)
+    if (params?.limit) query.set('limit', String(params.limit))
+
+    const queryString = query.toString()
+    return this.request<any[]>(`/api/activities${queryString ? `?${queryString}` : ''}`)
+  }
+
   async createTask(data: {
     title: string
     type?: string
